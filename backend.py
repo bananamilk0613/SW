@@ -19,7 +19,7 @@ from kivy.uix.screenmanager import ScreenManager, Screen # 화면 관리를 위�
 from kivy.uix.floatlayout import FloatLayout # 우측 상단 버튼 배치를 위해 필요
 # RelativeLayout 추가 (하단 고정 버튼을 위해)
 from kivy.uix.relativelayout import RelativeLayout 
-from kivy.graphics import Color, Rectangle, RoundedRectangle # 배경색 및 둥근 모서리를 위한 import 추가
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Line # 배경색 및 둥근 모서리를 위한 import 추가
 from kivy.metrics import dp # dp 단위를 사용하기 위해 import
 from kivy.properties import ObjectProperty, StringProperty # 위젯 참조 및 속성 사용을 위해 import
 from kivy.uix.behaviors import ButtonBehavior # 커스텀 버튼 위젯을 위해 import
@@ -414,7 +414,7 @@ class AdminMainScreen(WhiteBgScreen):
 
 
 # --------------------------------------------------------
-#  관리자 물품 신청(소유권) 관리
+# (신규 화면) 관리자 물품 신청(소유권) 관리
 # --------------------------------------------------------
 class AdminClaimApprovalScreen(WhiteBgScreen):
     """관리자가 사용자의 물품 신청(소유권)을 승인/거절하는 화면"""
@@ -449,27 +449,28 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
         self.grid.clear_widgets()
         app = App.get_running_app()
 
-        
-        # 1. 모든 신청(claims) 목록을 가져옵니다.
+        # 'status'가 없는 (즉, 'pending' 상태인) 신청만 필터링
         all_claims = app.claims
-        
-        # 2. 'status'가 없는 (즉, 'pending' 상태인) 신청만 필터링합니다.
         pending_claims = [c for c in all_claims if 'status' not in c]
-        
 
         if not pending_claims:
             self.grid.add_widget(Label(text="검토 대기 중인 신청이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
             return
 
-        # 헬퍼 함수... (생략)
+        # 헬퍼 함수: 자동 줄바꿈 및 높이 조절 라벨 생성
         def create_wrapping_label(text_content, **kwargs):
             label = Label(
-                text=text_content, size_hint_y=None, font_name=FONT_NAME,
-                markup=True, halign='left', **kwargs
+                text=text_content,
+                size_hint_y=None, # <- 높이를 텍스트에 맞춤
+                font_name=FONT_NAME,
+                markup=True,
+                halign='left',
+                **kwargs
             )
             label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
             label.bind(texture_size=lambda instance, value: setattr(instance, 'height', value[1]))
             return label
+
 
         for claim in pending_claims:
             item_id = claim.get('item_id')
@@ -479,7 +480,7 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
             
             if not item:
                 continue 
-            
+
             # (1) 물품 기본 정보 표시
             item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
             item_box.bind(minimum_height=item_box.setter('height'))
@@ -503,42 +504,49 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
             
             item_box.add_widget(Label(size_hint_y=None, height=dp(10))) # 여백
 
-            # (3) 교차 비교 UI
+            # --- ▼▼▼ (수정) 교차 비교 UI에서 '장소' 비교 제거 ▼▼▼ ---
             
+            # (3-1) 등록자가 올린 원본 정보
             item_box.add_widget(create_wrapping_label(
-                text_content=f"[b]등록자(Finder)가 올린 정보:[/b]", color=[0.1, 0.4, 0.7, 1] # 파란색
+                text_content=f"[b]등록자(Finder)가 올린 정보:[/b]",
+                color=[0.1, 0.4, 0.7, 1] # 파란색
             ))
             item_box.add_widget(create_wrapping_label(
-                text_content=f"  - 장소: {item['loc']}", color=[0.1, 0.4, 0.7, 1]
+                text_content=f"  - (장소): {item['loc']}",
+                color=[0.1, 0.4, 0.7, 1]
             ))
             item_box.add_widget(create_wrapping_label(
-                text_content=f"  - 상세: {item.get('desc', '없음')}", color=[0.1, 0.4, 0.7, 1]
+                text_content=f"  - (상세): {item.get('desc', '없음')}",
+                color=[0.1, 0.4, 0.7, 1]
             ))
+
             item_box.add_widget(Label(size_hint_y=None, height=dp(10))) # 여백
 
-            # (3-2) 신청자가 입력한 검증 정보
+            # (3-2) 신청자가 입력한 검증 정보 (상세 설명만)
             item_box.add_widget(create_wrapping_label(
-                text_content=f"[b]신청자(Claimer)가 입력한 정보:[/b]", color=[0.8, 0.2, 0.2, 1] # 빨간색
+                text_content=f"[b]신청자(Claimer)가 입력한 [상세 특징]:[/b]",
+                color=[0.8, 0.2, 0.2, 1] # 빨간색
             ))
+            # (수정) 'verification_location' 표시 라벨 제거됨
             item_box.add_widget(create_wrapping_label(
-                text_content=f"  - 장소: {claim.get('verification_location', 'N/A')}", color=[0.8, 0.2, 0.2, 1]
+                text_content=f"{claim.get('verification_details', 'N/A')}",
+                color=[0.8, 0.2, 0.2, 1]
             ))
-            item_box.add_widget(create_wrapping_label(
-                text_content=f"  - 상세: {claim.get('verification_details', 'N/A')}", color=[0.8, 0.2, 0.2, 1]
-            ))
+            # --- ▲▲▲ (수정) 완료 ▲▲▲ ---
+
             item_box.add_widget(Label(size_hint_y=None, height=dp(15))) # 버튼 전 여백
 
             # (4) 승인/거절 버튼 추가
             button_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
             
             approve_btn = Button(text="전달 완료 (승인)", font_name=FONT_NAME, background_color=[0.2, 0.8, 0.2, 1])
-            approve_btn.item_id = item_id # item 객체 대신 id 전달
-            approve_btn.claim = claim # claim 객체 전달
+            approve_btn.item_id = item_id 
+            approve_btn.claim = claim 
             approve_btn.bind(on_press=self.approve_claim) 
             
             reject_btn = Button(text="신청 거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
-            reject_btn.item_id = item_id # item 객체 대신 id 전달
-            reject_btn.claim = claim # claim 객체 전달
+            reject_btn.item_id = item_id 
+            reject_btn.claim = claim 
             reject_btn.bind(on_press=self.reject_claim)
             
             button_layout.add_widget(approve_btn)
@@ -547,16 +555,13 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
             item_box.add_widget(button_layout)
             
             self.grid.add_widget(item_box)
-    
 
-    # --- 연락처 공유' 로직 ---
     def approve_claim(self, instance):
         """(관리자) 신청을 승인 -> 신청(claim) 객체에 상태와 연락처를 기록합니다."""
         app = App.get_running_app()
         item_id = instance.item_id
         claim = instance.claim
 
-        # 1. 원본 item 객체를 찾아 등록자(Finder)의 연락처를 확보합니다.
         item = next((i for i in app.all_items if i.get('item_id') == item_id), None)
         if not item:
             Popup(title='오류', content=Label(text='원본 아이템을 찾을 수 없습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
@@ -564,14 +569,11 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
 
         finder_contact = item.get('contact', '연락처 없음')
         
-        # 2. 아이템 상태 변경
         item['status'] = 'found_returned'
         
-        # 3. (중요) 신청(claim) 객체를 삭제하는 대신, '승인' 상태와 '연락처'를 추가합니다.
         claim['status'] = 'approved'
         claim['finder_contact'] = finder_contact
             
-        # 4. 관리자에게 팝업 알림
         popup_message = f"승인이 완료되었습니다.\n\n" \
                         f"'{claim.get('claimer_nickname')}' 님에게\n" \
                         f"등록자 연락처 ({finder_contact})가 공유됩니다."
@@ -581,27 +583,22 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
                       content=Label(text=popup_message, font_name=FONT_NAME, markup=True, padding=dp(10)),
                       size_hint=(0.9, 0.4))
         
-        # 5. 팝업이 닫힌 '후에' 목록을 새로고침합니다.
         popup.bind(on_dismiss=self.refresh_list)
         popup.open()
 
-    # --- 신청 거절' 로직 ---
     def reject_claim(self, instance):
         """(관리자) 신청을 거절 -> 신청(claim) 객체에 '거절' 상태를 기록합니다."""
         app = App.get_running_app()
         item_id = instance.item_id
         claim = instance.claim
 
-        # 1. 아이템 상태를 'found_available'(신청 가능)으로 복구
         for item in app.all_items:
             if item.get('item_id') == item_id:
-                item['status'] = 'found_available'
+                item['status'] = 'found_available' # '신청 가능'으로 복구
                 break
         
-        # 2. (중요) 신청(claim) 객체를 삭제하는 대신, '거절' 상태를 추가합니다.
         claim['status'] = 'rejected'
             
-        # 3. 목록 새로고침
         self.refresh_list()
    
 
@@ -1439,6 +1436,7 @@ except ImportError:
         if callback:
             # grants = [True, True, ...]
             callback(permissions_list, [True] * len(permissions_list))
+
 # --------------------------------------------------------
 # 새 화면: 분실물 등록 페이지 (AddItemScreen)
 # --------------------------------------------------------
@@ -1470,14 +1468,24 @@ class AddItemScreen(WhiteBgScreen):
 
         # 입력 필드
         self.name_input = get_rounded_textinput('물건 이름 (예: 에어팟 프로)')
-        self.desc_input = get_rounded_textinput('자세한 설명 (선택)')
+        self.desc_input = get_rounded_textinput('자세한 설명 (공개됨, 예: 검은색 케이스)') # <-- (수정) 힌트 텍스트 변경
         self.loc_input = get_rounded_textinput('발견/분실 장소 (예: 중앙도서관 1층)')
         
-        # --- '시간' 입력 필드 추가 ---
         self.time_input = get_rounded_textinput('발견/분실 시간 (예: 14:30)')
         
         self.contact_input = get_rounded_textinput('연락처 (예: 010-1234-5678)')
 
+        self.verification_desc_input = TextInput(
+            hint_text='[신원 확인용 정보 (비공개)]\n(예: 배경화면 사진, 지갑 속 특정 카드, 케이스 안쪽 스티커 등)', 
+            font_name=FONT_NAME, 
+            size_hint_y=None, 
+            height=dp(100), 
+            padding=dp(15),
+            background_normal='', 
+            background_color=[0.95, 0.95, 0.8, 1] # 연한 노란색 배경
+        )
+        
+        # 1. Spinner를 'option_cls_args' 없이 먼저 생성합니다.
         self.category_spinner = Spinner(
             text='카테고리 선택 (종류)',
             values=('전자기기', '서적', '의류', '지갑/카드', '기타'),
@@ -1498,13 +1506,15 @@ class AddItemScreen(WhiteBgScreen):
             'height': dp(50)                  # (2. 옵션 높이 조절)
         }
 
+
         content_layout.add_widget(self.name_input)
         content_layout.add_widget(self.desc_input)
+        
+        # (순서 변경) desc_input 바로 뒤에 추가
+        content_layout.add_widget(self.verification_desc_input)
+        
         content_layout.add_widget(self.loc_input)
-        
-        # --- '시간' 필드를 레이아웃에 추가 ---
         content_layout.add_widget(self.time_input)
-        
         content_layout.add_widget(self.contact_input)
         content_layout.add_widget(self.category_spinner)
 
@@ -1541,25 +1551,54 @@ class AddItemScreen(WhiteBgScreen):
         # 화면에 들어올 때마다 제목과 필수 항목 조정
         if self.is_lost:
             self.header_title.text = "[b]분실물 등록[/b]"
+            # --- ▼▼▼ (수정) '분실물' 등록 시 신원 확인란 숨기기 ▼▼▼ ---
+            if self.verification_desc_input.parent:
+                self.verification_desc_input.parent.remove_widget(self.verification_desc_input)
+            # --- ▲▲▲ (수정) ---
         else:
             self.header_title.text = "[b]습득물 등록[/b]"
+            # --- ▼▼▼ (수정) '습득물' 등록 시 신원 확인란 보이기 ▼▼▼ ---
+            if not self.verification_desc_input.parent:
+                # desc_input 바로 뒤(인덱스 2)에 추가
+                self.children[0].children[0].children[1].add_widget(self.verification_desc_input, index=2)
+            # --- ▲▲▲ (수정) ---
+
 
         # 필드 초기화
         self.name_input.text = ""
         self.desc_input.text = ""
         self.loc_input.text = ""
-        
-        # --- '시간' 필드 초기화 추가 ---
         self.time_input.text = ""
-        
         self.contact_input.text = ""
         self.image_path = ""
         self.photo_label.text = "사진이 선택되지 않았습니다."
         self.image_preview.source = DEFAULT_IMAGE
         self.category_spinner.text = '카테고리 선택 (종류)'
+        
+        self.verification_desc_input.text = ""
+      
 
     def select_photo(self, instance):
-        """plyer를 사용하여 파일 선택 창을 엽니다."""
+        """plyer를 사용하여 파일 선택 창을 엽니다. (권한 요청 포함)"""
+        if platform == 'android':
+            permissions = [Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE]
+            request_permissions(permissions, self.on_permission_callback)
+        else:
+            self.open_file_chooser()
+
+    def on_permission_callback(self, permissions, grants):
+        """(신규) 권한 요청 팝업의 결과를 처리하는 콜백 함수입니다."""
+        if all(grants):
+            print("권한 승인됨. 파일 선택기 엽니다.")
+            self.open_file_chooser()
+        else:
+            print("권한 거부됨.")
+            Popup(title='권한 필요',
+                  content=Label(text='사진을 첨부하려면\n파일 접근 권한이 필요합니다.', font_name=FONT_NAME),
+                  size_hint=(0.8, 0.3)).open()
+
+    def open_file_chooser(self):
+        """(신규) 파일 선택기를 여는 로직을 별도 메소드로 분리"""
         filechooser.open_file(on_selection=self.on_file_selection)
 
     def on_file_selection(self, selection):
@@ -1568,58 +1607,57 @@ class AddItemScreen(WhiteBgScreen):
             self.image_path = selection[0]
             self.photo_label.text = os.path.basename(self.image_path)
             self.image_preview.source = self.image_path
-            self.image_preview.reload() # 이미지를 다시 로드하여 갱신합니다.
+            self.image_preview.reload()
 
     def register_item(self, instance):
         name = self.name_input.text
-        desc = self.desc_input.text
+        desc = self.desc_input.text # (공개용)
         loc = self.loc_input.text
-        
-        # --- '시간' 값 가져오기 ---
-        time_val = self.time_input.text # 변수명 변경 (time 모듈과 충돌 방지)
-        
+        time_val = self.time_input.text
         contact = self.contact_input.text
         category = self.category_spinner.text
+        
+        verification_desc = self.verification_desc_input.text # (비공개용)
 
-        # --- '시간'을 필수 항목으로 유효성 검사 추가 ---
+        # (수정) '분실물'이 아닐 경우(습득물일 경우) verification_desc도 필수 항목
         if not name or not loc or not time_val or not contact or category == '카테고리 선택 (종류)':
-            Popup(title='오류', content=Label(text='사진을 제외한 모든 항목을 입력해주세요.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            Popup(title='오류', content=Label(text='기본 정보를 모두 입력해주세요.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        if not self.is_lost and not verification_desc:
+            Popup(title='오류', content=Label(text='[신원 확인용 정보]는\n습득물 등록 시 필수 항목입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
 
-        # ---  사진 필수 검사 비활성화  ---
-        # 습득물인 경우 사진 필수 (플로우차트 일치)
-        # if not self.is_lost and not self.image_path:
-        #     Popup(title='오류', content=Label(text='습득물은 사진을 반드시 첨부해야 합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-        #     return
-        # --- 주석 처리 ---
-
-        # 이미지 경로가 없으면 기본 이미지 사용
-        # (사진을 안 올리면 image 변수에 빈 문자열("")이 들어가게 됩니다)
         image = self.image_path if self.image_path else "" 
         
         app = App.get_running_app()
-
         
-        # 고유 ID 생성 (간단하게 현재 시간 사용)
         item_id = f"item_{int(time.time())}_{app.current_user}"
         
-        # 상태(status) 설정
         if self.is_lost:
-            status = 'lost' # 내가 잃어버림
+            status = 'lost'
+            # 분실물은 신원 확인 정보가 필요 없음
+            verification_desc = "" 
         else:
-            status = 'found_available' # 내가 주웠고, 주인을 찾는 중
+            status = 'found_available'
+            # (verification_desc는 위에서 이미 값을 가져옴)
 
         new_item = {
-            'item_id': item_id, # <-- 고유 ID 추가
-            'name': name, 'desc': desc, 'loc': loc, 'time': time_val, 'contact': contact, # time_val 사용
-            'image': image, # <-- 사진을 안 올렸으면 "" (빈 문자열)이 저장됨
+            'item_id': item_id,
+            'name': name, 
+            'desc': desc, # (공개용)
+            'loc': loc, 
+            'time': time_val, 
+            'contact': contact,
+            'image': image,
             'category': category,
-            'status': status, # <-- 'lost' 또는 'found_available'로 수정
-            'registered_by_id': app.current_user, # 등록자 아이디
-            'registered_by_nickname': app.current_user_nickname # 등록자 닉네임
+            'status': status,
+            'registered_by_id': app.current_user,
+            'registered_by_nickname': app.current_user_nickname,
+            'verification_desc': verification_desc # (비공개용)
+           
         }
 
-        # App의 pending_items 리스트에 새 아이템 추가
         app.pending_items.append(new_item)
 
         popup = Popup(title='알림', content=Label(text='등록 신청이 완료되었습니다.\n관리자 승인 후 게시됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
@@ -1630,6 +1668,7 @@ class AddItemScreen(WhiteBgScreen):
 # --------------------------------------------------------
 # 새 화면: 분실물 상세 정보 페이지 (ItemDetailScreen)
 # --------------------------------------------------------
+
 class ItemDetailScreen(WhiteBgScreen):
     item_data = ObjectProperty(None)
 
@@ -1649,7 +1688,7 @@ class ItemDetailScreen(WhiteBgScreen):
         app = App.get_running_app()
         
         # --- 1. 하단 고정 바 (상태에 따라 다르게 표시) ---
-        # (이 부분은 수정되지 않았습니다. 기존과 동일)
+
         bottom_bar = BoxLayout(
             size_hint=(1, None), height=dp(80), 
             pos_hint={'bottom': 0}, padding=dp(10), spacing=dp(10)
@@ -1777,16 +1816,41 @@ class ItemDetailScreen(WhiteBgScreen):
         category_label.bind(size=category_label.setter('text_size'))
         info_section.add_widget(category_label)
 
-    
-        # 시간 (한 줄에 표시)
-        time_label = Label(
-            # text=f"장소: {self.item_data['loc']}  ·  시간: {self.item_data.get('time', 'N/A')}", (이전 코드)
-            text=f"시간: {self.item_data.get('time', 'N/A')}", # (수정된 코드)
+        
+        # 장소 및 시간 (한 줄에 표시)
+        loc_time_label = Label(
+            text=f"장소: {self.item_data['loc']}  ·  시간: {self.item_data.get('time', 'N/A')}",
             font_name=FONT_NAME, color=[0.3,0.3,0.3,1],
             font_size='16sp', size_hint_y=None, height=dp(25), halign='left'
         )
-        time_label.bind(size=time_label.setter('text_size'))
-        info_section.add_widget(time_label)
+        loc_time_label.bind(size=loc_time_label.setter('text_size'))
+        info_section.add_widget(loc_time_label)
+       
+        
+        
+        # 상세 설명 제목
+        info_section.add_widget(Label(size_hint_y=None, height=dp(15))) # 위쪽 여백
+        
+        desc_title_label = Label(
+            text="[b]상세 설명[/b]",
+            font_name=FONT_NAME, color=[0,0,0,1], markup=True,
+            font_size='20sp', size_hint_y=None, height=dp(40), halign='left'
+        )
+        
+        desc_title_label.bind(size=desc_title_label.setter('text_size'))
+        info_section.add_widget(desc_title_label)
+
+        # 상세 설명 내용
+        desc_content_label = Label(
+            text=self.item_data.get('desc', '없음'),
+            font_name=FONT_NAME, color=[0.2,0.2,0.2,1],
+            font_size='16sp', size_hint_y=None, halign='left'
+        )
+        desc_content_label.bind(width=lambda *x: desc_content_label.setter('text_size')(desc_content_label, (desc_content_label.width, None)),
+                                texture_size=lambda *x: desc_content_label.setter('height')(desc_content_label, desc_content_label.texture_size[1]))
+        info_section.add_widget(desc_content_label)
+        
+        
 
         # 스크롤 뷰에 컨텐츠 추가
         scroll_content.add_widget(info_section)
@@ -1799,6 +1863,7 @@ class ItemDetailScreen(WhiteBgScreen):
         self.main_layout.add_widget(main_content_container)
         self.main_layout.add_widget(bottom_bar)
 
+
     def show_claim_verification_popup(self, instance):
         """'이 물건 주인입니다' 클릭 시 교차 검증 팝업을 띄웁니다."""
         app = App.get_running_app()
@@ -1809,89 +1874,67 @@ class ItemDetailScreen(WhiteBgScreen):
             Popup(title='알림', content=Label(text='이미 신청한 물품입니다.\n관리자가 검토 중입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
             
-        # 팝업 컨텐츠
-        popup_content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+        # 팝업 컨텐츠 레이아웃
+        content_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         
-        popup_content.add_widget(Label(
-            text="[b]물품 주인 확인[/b]\n\n관리자가 확인할 수 있도록\n본인 소유임을 증명할 수 있는 정보를 입력해주세요.",
-            font_name=FONT_NAME, markup=True, halign='center'
+        # (핵심) 흰색 배경 및 검은색 테두리 추가
+        with content_layout.canvas.before:
+            Color(1, 1, 1, 1)  # 흰색 배경
+            self.rect_bg = RoundedRectangle(pos=content_layout.pos, size=content_layout.size, radius=[dp(10)])
+        
+        # 크기/위치 변경 시 배경 및 테두리도 함께 변경되도록 바인딩
+        content_layout.bind(pos=self._update_popup_rect_cb(self.rect_bg), 
+                            size=self._update_popup_rect_cb(self.rect_bg))
+
+        content_layout.add_widget(Label(
+            text="[b]물품 주인 확인[/b]\n\n관리자가 확인할 수 있도록\n본인 소유임을 증명할 수 있는\n[b]상세 특징[/b]을 입력해주세요.",
+            font_name=FONT_NAME, markup=True, halign='center', color=[0,0,0,1]
         ))
         
-        # 1. 상세 특징 입력
+        # 상세 특징 입력
         detail_input = TextInput(
-            hint_text='물품의 상세 특징 (예: 케이스 색상, 스티커 등)', 
-            font_name=FONT_NAME, multiline=True, size_hint_y=None, height=dp(100)
+            hint_text='물품의 상세 특징 (예: 케이스 색상, 스티커, 배경화면, 내용물 등)', 
+            font_name=FONT_NAME, multiline=True, size_hint_y=None, height=dp(100),
+            background_normal='', background_color=[0.95, 0.95, 0.95, 1], # TextInput 배경도 살짝 회색
+            foreground_color=[0,0,0,1],
+            padding=[dp(10), dp(10), dp(10), dp(10)]
         )
+        content_layout.add_widget(detail_input)
         
-        # 2. 분실 장소/시간 입력
-        loc_input = TextInput(
-            hint_text='잃어버린 장소 및 시간 (예: 제1공학관 3층, 어제 오후 2시경)', 
-            font_name=FONT_NAME, multiline=True, size_hint_y=None, height=dp(100)
-        )
-        
-        popup_content.add_widget(detail_input)
-        popup_content.add_widget(loc_input)
-        
-        # 3. 신청 버튼
+        # 신청 버튼
         submit_button = get_styled_button("신청서 제출", [0.8, 0.2, 0.2, 1], [1, 1, 1, 1])
         
         popup = Popup(
-            title="소유권 주장 신청",
-            title_font=FONT_NAME,
-            content=popup_content,
-            size_hint=(0.9, 0.7),
-            auto_dismiss=False
+            title="", # (핵심) 제목을 비워서 기본 제목 표시줄 제거
+            content=content_layout,
+            size_hint=(0.9, 0.6),
+            auto_dismiss=False,
+            separator_height=0,   # (핵심) 구분선 높이 0으로 설정
+            background=""         # (핵심) 팝업 자체 배경을 투명하게
         )
         
-        # 신청 버튼에 콜백 함수 바인딩
         submit_button.bind(on_press=lambda *args: self.submit_verification_claim(
-            popup, item_id, detail_input.text, loc_input.text
+            popup, item_id, detail_input.text
         ))
         
-        popup_content.add_widget(submit_button)
+        content_layout.add_widget(submit_button)
         
-        # 4. 닫기 버튼
-        close_button = Button(text="취소", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+        # 닫기 버튼
+        close_button = get_styled_button("취소", [0.5, 0.5, 0.5, 1], [1,1,1,1]) # 버튼 스타일 변경
         close_button.bind(on_press=popup.dismiss)
-        popup_content.add_widget(close_button)
+        content_layout.add_widget(close_button)
 
         popup.open()
 
-    def submit_verification_claim(self, popup_to_dismiss, item_id, details, location):
-        """팝업에서 '신청서 제출' 버튼 클릭 시 호출됩니다."""
-        
-        if not details or not location:
-            Popup(title='오류', content=Label(text='두 항목 모두 입력해야 합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-            return
-
-        app = App.get_running_app()
-
-        # 1. 아이템 상태를 'found_pending'으로 변경
-        for item in app.all_items:
-            if item.get('item_id') == item_id:
-                item['status'] = 'found_pending'
-                break
-                
-        # 2. '신청(claim)' 객체 생성 (검증 정보 포함)
-        new_claim = {
-            'item_id': item_id,
-            'claimer_id': app.current_user,
-            'claimer_nickname': app.current_user_nickname,
-            'verification_details': details,     # <-- 검증 정보 1 추가
-            'verification_location': location  # <-- 검증 정보 2 추가
-        }
-        app.claims.append(new_claim)
-        
-        # 3. 팝업 닫기
-        popup_to_dismiss.dismiss()
-        
-        # 4. 팝업 알림 후 목록으로 이동
-        success_popup = Popup(title='신청 완료', content=Label(text='관리자에게 신청서가 전달되었습니다.\n검토 후 연락이 갈 것입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.4))
-        success_popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
-        success_popup.open()
-
     def _update_rect_cb(self, rect):
         """하단 바 배경 업데이트를 위한 콜백 함수"""
+        def update_rect(instance, value):
+            rect.pos = instance.pos
+            rect.size = instance.size
+        return update_rect
+    
+    def _update_popup_rect_cb(self, rect):
+        """RoundedRectangle 팝업 배경 업데이트를 위한 콜백 함수"""
         def update_rect(instance, value):
             rect.pos = instance.pos
             rect.size = instance.size
@@ -2111,30 +2154,43 @@ class LostAndFoundScreen(WhiteBgScreen):
     def show_registration_choice_popup(self, instance):
         """분실/습득 등록 선택 팝업을 띄웁니다."""
         popup_content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+        
+        # (핵심) 1. 흰색 둥근 배경 그리기
+        with popup_content.canvas.before:
+            Color(1, 1, 1, 1)
+            self.rect_bg = RoundedRectangle(pos=popup_content.pos, size=popup_content.size, radius=[dp(10)])
+        
+        # (핵심) 2. 배경이 팝업 크기를 따라가도록 바인딩
+        popup_content.bind(pos=self._update_popup_rect_cb(self.rect_bg),
+                           size=self._update_popup_rect_cb(self.rect_bg))
 
         popup = Popup(
             title='등록 종류 선택',
             title_font=FONT_NAME,
+            title_color=[0, 0, 0, 1], # 제목 텍스트 검은색
             content=popup_content,
-            size_hint=(0.8, 0.4)
+            size_hint=(0.8, 0.4),
+            separator_height=0,      # (핵심) 3. 기본 제목 표시줄(회색) 제거
+            background=''            # (핵심) 4. 기본 팝업 배경(회색) 투명하게
         )
-
+        
+        # ... (버튼 추가 로직은 동일) ...
         def go_to_register(is_lost, *args):
             register_screen = self.manager.get_screen('add_item')
             register_screen.is_lost = is_lost
             self.manager.current = 'add_item'
             popup.dismiss()
-
+            
+        
         lost_button = get_styled_button("잃어버렸어요 (분실물 등록)", [0.8, 0.2, 0.2, 1], [1,1,1,1])
-        lost_button.bind(on_press=lambda *args: go_to_register(True))
-
         found_button = get_styled_button("주웠어요 (습득물 등록)", [0.2, 0.6, 1, 1], [1,1,1,1])
+        lost_button.bind(on_press=lambda *args: go_to_register(True))
         found_button.bind(on_press=lambda *args: go_to_register(False))
-
         popup_content.add_widget(lost_button)
         popup_content.add_widget(found_button)
 
         popup.open()
+
 
     def search_items(self, *args):
         """키워드와 카테고리로 아이템을 검색합니다."""
@@ -2264,6 +2320,14 @@ class LostAndFoundScreen(WhiteBgScreen):
         detail_screen = self.manager.get_screen('item_detail')
         detail_screen.item_data = instance.item_data
         self.go_to_screen('item_detail')
+
+    def _update_popup_rect_cb(self, rect):
+        """RoundedRectangle 팝업 배경 업데이트를 위한 콜백 함수"""
+        def update_rect(instance, value):
+            rect.pos = instance.pos
+            rect.size = instance.size
+        return update_rect
+
 
 # --------------------------------------------------------
 # 새 화면: 회원가입 페이지 (2단계)
@@ -2714,16 +2778,14 @@ class MyApp(App):
         ]
         self.notification_keywords = ['지갑'] # 알림 테스트용
         
-        # --- ▼▼▼ (수정) claims 더미 데이터 (관리자 승인 전 상태) ▼▼▼ ---
         self.claims = [
             {'item_id': 'item_2', 
              'claimer_id': 'user', 
              'claimer_nickname': '테스트유저',
-             'verification_details': '파란색 학생증 케이스 뒷면에 노란색 스마일 스티커가 붙어있습니다.',
-             'verification_location': '제1공학관 3층 302호 강의실에서 잃어버린 것 같습니다.'
+             'verification_details': '파란색 학생증 케이스 뒷면에 노란색 스마일 스티커가 붙어있습니다.'
             }
         ]
-        # --- ▲▲▲ (수정) ▲▲▲ ---
+       
 
 
     def build(self):
@@ -2763,7 +2825,6 @@ class MyApp(App):
         sm.add_widget(MyClaimsScreen(name='my_claims'))
         
         return sm
-
 
 
 
