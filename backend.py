@@ -1,4 +1,5 @@
 import kivy
+import pyrebase # 파이어베이스 연동을 위해 pyrebase 임포트
 import os # 파일 경로를 위해 os 모듈 임포트
 # Kivy 기본 위젯 및 레이아웃 모듈 임포트
 import time
@@ -57,7 +58,30 @@ except Exception as e:
     print(f"폰트 등록 오류: {e}. 'NanumGothic.ttf' 파일이 현재 폴더에 있는지, buildozer.spec에 ttf가 포함됐는지 확인하세요.")
     FONT_NAME = None # 폰트 로드 실패 시 기본 폰트 사용
 # --------------------------------------------------------
-
+# 파이어 베이스 적용 코드
+# --------------------------------------------------------
+config = {
+    "apiKey": "AIzaSyB5LXKty5tRMB3PB4CEgiP6Cb2eXlO5xxo",
+    "authDomain": "campus-life-management.firebaseapp.com",
+    "databaseURL": "https://campus-life-management-default-rtdb.firebaseio.com",
+    "projectId": "campus-life-management",
+    "storageBucket": "campus-life-management.firebasestorage.app",
+    "messagingSenderId": "1037667609371",
+    "appId": "1:1037667609371:web:73e90d9997406289cf81be",
+    "measurementId": "G-LBN08ZY8Y3",
+}
+try:
+    firebase = pyrebase.initialize_app(config)
+    # 인증 서비스 가져오기
+    auth = firebase.auth()
+    # Realtime Database 서비스 가져오기
+    db = firebase.database()
+    print("Firebase 초기화 성공")
+except Exception as e:
+    print(f"Firebase 초기화 실패: {e}")
+    firebase = None
+    auth = None
+    db = None
 # --------------------------------------------------------
 # 공통 UI 스타일 함수
 # --------------------------------------------------------
@@ -631,7 +655,31 @@ class ClubApprovalScreen(WhiteBgScreen):
 
     def refresh_approval_list(self, *args):
         app = App.get_running_app()
-        self.update_approval_list(app.pending_clubs)
+        
+
+        if not app.user_token:
+            self.update_approval_list([]) # 토큰 없으면 빈 리스트로
+            Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        try:
+            # (변경) 로컬 app.pending_items 대신 Firebase DB에서 직접 가져옵니다.
+            # (중요) app.user_token을 함께 보내야 5.0단계의 보안 규칙을 통과합니다.
+            pending_node = db.child("pending_items").get(app.user_token)
+            
+            pending_items_dict = pending_node.val() # 딕셔너리 형태로 받음
+            
+            if pending_items_dict:
+                # 딕셔너리의 값들(value)만 리스트로 변환
+                pending_list = list(pending_items_dict.values())
+                self.update_approval_list(pending_list)
+            else:
+                # DB에 아무것도 없으면 빈 리스트로
+                self.update_approval_list([])
+
+        except Exception as e:
+            self.update_approval_list([]) # 오류 시 빈 리스트
+            Popup(title='DB 오류', content=Label(text=f'데이터 읽기 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
     def update_approval_list(self, pending_clubs):
         self.approval_grid.clear_widgets()
@@ -749,11 +797,35 @@ class ItemApprovalScreen(WhiteBgScreen):
     def approve_item(self, instance):
         approved_item = instance.item_data
         app = App.get_running_app()
-        if approved_item in app.pending_items:
-            app.all_items.append(approved_item)
-            app.pending_items.remove(approved_item)
-            self.check_keyword_notification(approved_item) # 키워드 알림 체크
-        self.refresh_approval_list()
+        
+        if not app.user_token:
+            Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        item_id = approved_item.get('item_id')
+        if not item_id:
+            Popup(title='오류', content=Label(text='아이템 ID가 없습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        try:
+            # (기존 로컬 리스트 조작 코드 제거)
+            # if approved_item in app.pending_items:
+            #     app.all_items.append(approved_item)
+            #     app.pending_items.remove(approved_item)
+            
+            # (변경) 1. 'all_items' 경로에 아이템 추가
+            db.child("all_items").child(item_id).set(approved_item, app.user_token)
+            
+            # (변경) 2. 'pending_items' 경로에서 해당 아이템 삭제
+            db.child("pending_items").child(item_id).remove(app.user_token)
+
+            self.check_keyword_notification(approved_item) # 키워드 알림 체크 (이건 로컬 기능이니 유지)
+            
+            # (변경) 3. 목록 새로고침 (DB를 다시 읽어옴)
+            self.refresh_approval_list()
+
+        except Exception as e:
+            Popup(title='DB 오류', content=Label(text=f'승인 처리 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
     def reject_item(self, instance):
         rejected_item = instance.item_data
@@ -1608,7 +1680,6 @@ class AddItemScreen(WhiteBgScreen):
             self.photo_label.text = os.path.basename(self.image_path)
             self.image_preview.source = self.image_path
             self.image_preview.reload()
-
     def register_item(self, instance):
         name = self.name_input.text
         desc = self.desc_input.text # (공개용)
@@ -1632,15 +1703,21 @@ class AddItemScreen(WhiteBgScreen):
         
         app = App.get_running_app()
         
+        # ▼▼▼ [ 5.1단계 수정 ] ▼▼▼
+        # (uid 대신 current_user를 사용해도 고유 ID 생성에는 문제없습니다)
         item_id = f"item_{int(time.time())}_{app.current_user}"
         
+        # (로그인 토큰 확인)
+        if not app.user_token:
+            Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+        # ▲▲▲ [ 5.1단계 수정 ] ▲▲▲
+
         if self.is_lost:
             status = 'lost'
-            # 분실물은 신원 확인 정보가 필요 없음
             verification_desc = "" 
         else:
             status = 'found_available'
-            # (verification_desc는 위에서 이미 값을 가져옴)
 
         new_item = {
             'item_id': item_id,
@@ -1652,17 +1729,26 @@ class AddItemScreen(WhiteBgScreen):
             'image': image,
             'category': category,
             'status': status,
-            'registered_by_id': app.current_user,
+            'registered_by_id': app.current_user, # (기존 아이디)
+            'registered_by_uid': app.current_user_uid, # (Firebase UID)
             'registered_by_nickname': app.current_user_nickname,
             'verification_desc': verification_desc # (비공개용)
-           
         }
+        
+        try:
+            # app.pending_items.append(new_item) # <- (기존 로컬 리스트)
+            
+            # (변경) Firebase DB 'pending_items' 경로에 item_id를 키로 하여 저장
+            # (중요) app.user_token을 함께 보내야 5.0단계의 보안 규칙을 통과합니다.
+            db.child("pending_items").child(item_id).set(new_item, app.user_token)
 
-        app.pending_items.append(new_item)
-
-        popup = Popup(title='알림', content=Label(text='등록 신청이 완료되었습니다.\n관리자 승인 후 게시됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
-        popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
-        popup.open()
+            popup = Popup(title='알림', content=Label(text='등록 신청이 완료되었습니다.\n관리자 승인 후 게시됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
+            popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
+            popup.open()
+            
+        except Exception as e:
+            Popup(title='DB 오류', content=Label(text=f'데이터 저장 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+       
 
 
 # --------------------------------------------------------
@@ -2428,7 +2514,7 @@ class SignupScreen(WhiteBgScreen):
         self.email_input = get_rounded_textinput('이메일 주소', input_type='mail')
         self.login_id_input = get_rounded_textinput('아이디 (로그인용)') # 새로 추가
         self.nickname_input = get_rounded_textinput('닉네임 (표시용)') # 힌트 텍스트 변경
-        self.password_input = get_rounded_textinput('비밀번호 (최소 4자)', password=True)
+        self.password_input = get_rounded_textinput('비밀번호 (최소 6자)', password=True)
         self.confirm_password_input = get_rounded_textinput('비밀번호 확인', password=True)
 
         self.step2_layout.add_widget(self.email_input)
@@ -2501,33 +2587,95 @@ class SignupScreen(WhiteBgScreen):
         self.update_view() # 화면 초기화
         self.manager.current = 'login'
 
-
+    
+    # ▼▼▼ [ 수정된 do_signup 함수 ] ▼▼▼
     def do_signup(self, instance):
         """최종 회원가입 버튼 클릭 시 실행되는 함수 (2단계 유효성 검사 포함)"""
-        # --- '아이디' / '닉네임' 분리 ---
+        # --- (1단계 정보 가져오기) ---
+        student_id = self.student_id_input.text
+        name = self.name_input.text
+        department = self.department_input.text
+        grade = self.grade_input.text
+        
+        # --- (2단계 정보 가져오기) ---
         email = self.email_input.text
-        login_id = self.login_id_input.text # 값 가져오기
+        login_id = self.login_id_input.text # ★ (중요) DB 매핑에 사용될 키
         nickname = self.nickname_input.text
         password = self.password_input.text
         confirm_password = self.confirm_password_input.text
-        app = App.get_running_app()
-
+        
         # 2단계 유효성 검사
         if not email or not login_id or not nickname or not password or not confirm_password:
             self.show_popup("오류", "모든 계정 정보를 채워주세요.")
-        elif login_id in app.users: # Key를 login_id로 검사
-            self.show_popup("오류", "이미 사용 중인 아이디입니다.")
-        elif password != confirm_password:
+            return
+        if password != confirm_password:
             self.show_popup("오류", "비밀번호가 일치하지 않습니다.")
-        elif len(password) < 4:
-            self.show_popup("오류", "비밀번호는 최소 4자 이상이어야 합니다.")
-        else:
-            # 회원가입 성공 처리
-            # 닉네임 정보까지 포함하여 저장
-            app.users[login_id] = {'password': password, 'role': 'user', 'nickname': nickname} 
-            self.show_popup("성공", f"아이디 '{login_id}'님의 회원가입이 완료되었습니다!\n로그인 해주세요.", after_dismiss_callback=self.go_to_login)
-        # --- ---
+            return
+        if len(password) < 6: # (Firebase 기본값은 6자입니다.)
+            self.show_popup("오류", "비밀번호는 6자 이상이어야 합니다.")
+            return
 
+        # Firebase 객체 확인
+        if auth is None or db is None:
+             self.show_popup("오류", "Firebase가 초기화되지 않았습니다.")
+             return
+             
+        try:
+            mapping_node = db.child("id_to_email_mapping").child(login_id).get()
+            if mapping_node.val() is not None:
+                self.show_popup("오류", "이미 사용 중인 아이디입니다.")
+                return
+        except Exception as e:
+            self.show_popup("오류", f"DB 검사 실패: {e}")
+            return
+        
+        # --------------------------------------------------------
+        # Firebase 연동 시작
+        # --------------------------------------------------------
+        try:
+            # 1. Firebase Authentication에 '이메일'로 사용자 생성
+            user = auth.create_user_with_email_and_password(email, password)
+            
+            uid = user['localId']
+            id_token = user['idToken'] # 인증 토큰
+
+            # 2. Realtime Database에 '비공개' 프로필 정보 저장
+            user_profile_data = {
+                'login_id': login_id,
+                'nickname': nickname,
+                'email': email,
+                'role': 'user',
+                'student_id': student_id,
+                'name': name,
+                'department': department,
+                'grade': grade
+            }
+            db.child("users").child(uid).set(user_profile_data, id_token)
+
+            # 3. Realtime Database에 '공개용' 아이디-이메일 매핑 저장
+            db.child("id_to_email_mapping").child(login_id).set(email, id_token)
+
+            # 4. 성공 팝업
+            self.show_popup("성공", f"아이디 '{login_id}'님의 회원가입이 완료되었습니다!\n로그인 해주세요.", after_dismiss_callback=self.go_to_login)
+
+        # ▼▼▼ [ 수정된 (안전한) except 구문 ] ▼▼▼
+        except Exception as e:
+            # 오류가 발생해도 앱이 꺼지지 않도록 안전하게 처리
+            error_text = str(e) # 오류를 문자열로 변환
+            
+            if "EMAIL_EXISTS" in error_text:
+                self.show_popup("오류", "이미 사용 중인 이메일입니다.")
+            elif "WEAK_PASSWORD" in error_text:
+                self.show_popup("오류", "비밀번호는 6자 이상이어야 합니다.")
+            elif "INVALID_EMAIL" in error_text:
+                 self.show_popup("오류", "유효하지 않은 이메일 형식입니다.")
+            else:
+                # 위에서 못 잡은 다른 오류들
+                self.show_popup("오류", "Firebase 연결에 실패했습니다.\n(네트워크 또는 규칙 확인)")
+        # ▲▲▲ [ 수정된 (안전한) except 구문 ] ▲▲▲
+
+    # ▼▼▼ [ ★★★필수★★★ 추가된 show_popup 함수 ] ▼▼▼
+    # (이 함수가 없어서 AttributeError가 발생했습니다)
     def show_popup(self, title, message, after_dismiss_callback=None):
         """결과 메시지를 팝업으로 표시하는 도우미 함수"""
         content_layout = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(20))
@@ -2572,6 +2720,9 @@ class SignupScreen(WhiteBgScreen):
         popup.open()
 
 
+# --------------------------------------------------------
+# 기존 로그인 화면
+# --------------------------------------------------------
 # --------------------------------------------------------
 # 기존 로그인 화면
 # --------------------------------------------------------
@@ -2693,27 +2844,81 @@ class LoginScreen(WhiteBgScreen):
         popup.open()
 
 
+    # ▼▼▼ [ 수정된 do_login 함수 ] ▼▼▼
     def do_login(self, instance):
         """로그인 버튼 클릭 시 실행되는 함수"""
-        username = self.username_input.text # 'username'은 이제 '아이디'입니다.
+        username = self.username_input.text # 'username'은 사용자가 입력한 '아이디'입니다.
         password = self.password_input.text
         app = App.get_running_app()
+        
+        if not username or not password:
+            self.show_popup("로그인 실패", "아이디와 비밀번호를 입력하세요.", show_retry_button=True)
+            return
+        
+        # Firebase 객체 확인
+        if auth is None or db is None:
+             self.show_popup("로그인 실패", "Firebase가 초기화되지 않았습니다.", show_retry_button=True)
+             return
 
-        # 사용자 DB에서 정보 확인
-        if username in app.users and app.users[username]['password'] == password:
-            user_data = app.users[username]
+        try:
+            # --------------------------------------------------------
+            # 1. (DB 조회) 아이디로 이메일 찾기 (★공개 읽기★)
+            # --------------------------------------------------------
+            # db.child(...).get()은 토큰이 없으면 '공개 읽기' 규칙을 따릅니다.
+            email_node = db.child("id_to_email_mapping").child(username).get()
+            email = email_node.val() # 매핑된 이메일 주소 (예: "user@example.com")
+
+            if email is None:
+                # DB에 해당 아이디-이메일 매핑이 없음
+                self.show_popup("로그인 실패", "존재하지 않는 아이디입니다.", show_retry_button=True)
+                return
+
+            # --------------------------------------------------------
+            # 2. (인증) 찾은 이메일로 실제 로그인 시도
+            # --------------------------------------------------------
+            user = auth.sign_in_with_email_and_password(email, password)
             
-            # --- '아이디' / '닉네임' 분리 ---
-            app.current_user = username # 아이디 저장
-            app.current_user_nickname = user_data['nickname'] # 닉네임 저장
-            app.current_user_role = user_data['role'] # 역할 저장
-            # --- ---
+            # 3. 로그인 성공! 토큰과 UID(localId) 가져오기
+            uid = user['localId']
+            id_token = user['idToken']
 
+            # 4. (★중요★) 인증 토큰과 UID를 App 객체에 저장합니다.
+            app.user_token = id_token 
+            app.current_user_uid = uid 
+
+            # --------------------------------------------------------
+            # 5. (DB 조회) 프로필 정보 가져오기 (★인증된 읽기★)
+            # --------------------------------------------------------
+            # 'id_token'을 함께 보내야 'users/{uid}' 규칙 통과
+            user_profile = db.child("users").child(uid).get(id_token).val()
+
+            if user_profile:
+                # App 객체에 닉네임과 역할 정보 저장 (기존 코드가 의존함)
+                app.current_user_nickname = user_profile.get('nickname', '사용자')
+                app.current_user_role = user_profile.get('role', 'user')
+                app.current_user = user_profile.get('login_id', username) # 기존 코드 호환용
+            else:
+                # 인증은 됐으나 DB에 프로필이 없는 비정상적 상황
+                app.current_user_nickname = "사용자"
+                app.current_user_role = "user"
+                app.current_user = username
+
+            # 6. 메인 화면으로 이동
             self.manager.current = 'main'
-        else:
-            title = "로그인 실패"
-            message = "아이디 또는 비밀번호를 다시 확인하세요." # 메시지 수정
-            self.show_popup(title, message, show_retry_button=True)
+
+
+        except Exception as e:
+            # 오류가 발생해도 앱이 꺼지지 않도록 안전하게 처리
+            error_text = str(e) # 오류를 문자열로 변환
+
+            if "INVALID_LOGIN_CREDENTIALS" in error_text:
+                self.show_popup("로그인 실패", "비밀번호가 올바르지 않습니다.", show_retry_button=True)
+            elif "INVALID_EMAIL" in error_text:
+                self.show_popup("로그인 실패", "유효하지 않은 이메일 형식입니다.", show_retry_button=True)
+            else:
+                # 아이디 조회 실패, 네트워크 오류 등
+                self.show_popup("로그인 실패", "DB 연결 또는 인증에 실패했습니다.", show_retry_button=True)
+
 
 
 class MyApp(App):
@@ -2721,6 +2926,8 @@ class MyApp(App):
         super().__init__(**kwargs)
         # (더미 데이터) 실제 앱에서는 이 데이터를 데이터베이스나 서버에서 가져와야 합니다.
         # --- '아이디' / '닉네임' 분리 및 속성 추가 ---
+        
+        # (참고: self.users 더미 데이터는 이제 Firebase로 대체되어 사용되지 않습니다.)
         self.users = {
             # '아이디': {'password': '비밀번호', 'role': '역할', 'nickname': '닉네임'}
             'admin': {'password': 'admin1234', 'role': 'admin', 'nickname': '관리자'},
@@ -2730,6 +2937,12 @@ class MyApp(App):
         self.current_user = 'guest' # 로그인 아이디 저장
         self.current_user_nickname = 'Guest' # 표시용 닉네임 저장
         self.current_user_role = 'guest'
+        
+        # ▼▼▼ [필수 추가] Firebase 인증 정보를 저장할 변수 ▼▼▼
+        self.user_token = None # Firebase 인증 토큰 (로그인 시 저장됨)
+        self.current_user_uid = None # Firebase 고유 UID (로그인 시 저장됨)
+        # ▲▲▲ [필수 추가] ▲▲▲
+
         # --- ---
 
         self.all_clubs = [
@@ -2785,7 +2998,6 @@ class MyApp(App):
              'verification_details': '파란색 학생증 케이스 뒷면에 노란색 스마일 스티커가 붙어있습니다.'
             }
         ]
-       
 
 
     def build(self):
