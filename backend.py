@@ -60,6 +60,8 @@ from datetime import datetime
 # SpinnerOption 추가 (Spinner 옵션 커스터마이징을 위해)
 from kivy.uix.spinner import SpinnerOption
 
+# 비동기 이미지 로딩을 위해 AsyncImage 임포트
+from kivy.uix.image import AsyncImage
 
 # 스마트폰 기능 접근을 위한 plyer 임포트 (PC 환경 예외 처리 포함)
 
@@ -1289,7 +1291,6 @@ class ClubApprovalScreen(WhiteBgScreen):
 
 
 class ItemApprovalScreen(WhiteBgScreen):
-    """분실물 등록 신청을 관리하는 화면"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -1345,7 +1346,9 @@ class ItemApprovalScreen(WhiteBgScreen):
             for item_request in pending_items:
                 item_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(100), padding=dp(10), spacing=dp(10))
 
-                img = Image(source=item_request.get('image', DEFAULT_IMAGE), size_hint_x=0.3, allow_stretch=True)
+                # AsyncImage 적용
+                img = AsyncImage(source=item_request.get('image', DEFAULT_IMAGE), size_hint_x=0.3, allow_stretch=True)
+                
                 info_layout = BoxLayout(orientation='vertical', size_hint_x=0.4)
                 info_layout.add_widget(Label(text=f"[b]{item_request['name']}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, halign='left', valign='top'))
                 info_layout.add_widget(Label(text=f"장소: {item_request['loc']}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], halign='left', valign='top'))
@@ -1382,12 +1385,8 @@ class ItemApprovalScreen(WhiteBgScreen):
             return
             
         try:
-            # 승인된 아이템을 all_items 경로로 이동
             db.child("all_items").child(item_id).set(approved_item, app.user_token)
-            
-            # pending_items 경로에서 삭제
             db.child("pending_items").child(item_id).remove(app.user_token)
-
             self.check_keyword_notification(approved_item)
             self.refresh_approval_list()
 
@@ -1417,8 +1416,6 @@ class ItemApprovalScreen(WhiteBgScreen):
                         content=Label(text=f"등록하신 키워드 '{keyword}'가 포함된\n'{new_item['name']}' 게시물이 등록되었습니다.", font_name=FONT_NAME),
                         size_hint=(0.8, 0.4)).open()
                 break
-
-
 
 # --------------------------------------------------------
 
@@ -2946,9 +2943,6 @@ except ImportError:
 
 # --------------------------------------------------------
 
-# (import는 기존 유지)
-from kivy.uix.spinner import SpinnerOption 
-
 class AddItemScreen(WhiteBgScreen):
     is_lost = ObjectProperty(False)
 
@@ -2972,7 +2966,6 @@ class AddItemScreen(WhiteBgScreen):
         # 스크롤 가능한 컨텐츠 영역
         scroll_view = ScrollView()
         
-        # ▼▼▼ [수정] 변수명 앞에 'self.'를 붙여서 클래스 전체에서 쓸 수 있게 함 ▼▼▼
         self.content_layout = GridLayout(cols=1, spacing=dp(15), size_hint_y=None, padding=[0, dp(10), 0, 0])
         self.content_layout.bind(minimum_height=self.content_layout.setter('height'))
 
@@ -2994,7 +2987,6 @@ class AddItemScreen(WhiteBgScreen):
             background_color=[0.95, 0.95, 0.8, 1] 
         )
         
-        # 스피너 글씨 깨짐 해결용 클래스
         class KoreanSpinnerOption(SpinnerOption):
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
@@ -3016,11 +3008,9 @@ class AddItemScreen(WhiteBgScreen):
             option_cls=KoreanSpinnerOption 
         )
 
-        # 위젯 추가 (self.content_layout 사용)
         self.content_layout.add_widget(self.name_input)
         self.content_layout.add_widget(self.desc_input)
         
-        # 초기에는 verification_desc_input 추가
         self.content_layout.add_widget(self.verification_desc_input)
         
         self.content_layout.add_widget(self.loc_input)
@@ -3058,7 +3048,6 @@ class AddItemScreen(WhiteBgScreen):
         self.add_widget(root_layout)
 
     def on_enter(self, *args):
-        # 화면에 들어올 때마다 제목과 필수 항목 조정
         if self.is_lost:
             self.header_title.text = "[b]분실물 등록[/b]"
             if self.verification_desc_input.parent:
@@ -3066,28 +3055,12 @@ class AddItemScreen(WhiteBgScreen):
         else:
             self.header_title.text = "[b]습득물 등록[/b]"
             if not self.verification_desc_input.parent:
-                # ▼▼▼ [수정] 복잡한 인덱스 대신 self.content_layout 사용 ▼▼▼
-                # (desc_input 다음에 넣기 위해 인덱스 계산. Kivy는 리스트 역순이라 헷갈릴 수 있음)
-                # 안전하게 그냥 add_widget 하면 맨 아래로 가지만, 위치를 맞추려면 아래처럼 합니다.
-                # 여기서는 간단히 다시 추가 (위치는 맨 아래가 될 수 있음)하거나, 
-                # 정확한 위치를 위해 children 리스트를 조작해야 하는데, 
-                # 오류 방지를 위해 가장 안전한 방법인 '맨 뒤에 추가' 대신 '적절한 위치 삽입'을 시도합니다.
-                
-                # (간단한 해결책) 그냥 remove 했다가 다시 순서대로 그리는게 제일 안전하지만, 
-                # 여기서는 index=len(children)-2 정도로 넣겠습니다.
-                # 하지만 더 안전한 건 그냥 맨 아래나 위젯들 사이에 넣는 것입니다.
-                # 일단 오류가 안 나게 self.content_layout에 추가합니다.
                 try:
-                     # desc_input이 있는 위치를 찾아서 그 뒤에 넣음
                     index = self.content_layout.children.index(self.desc_input)
                     self.content_layout.add_widget(self.verification_desc_input, index=index)
                 except:
-                    # 실패하면 그냥 추가
                     self.content_layout.add_widget(self.verification_desc_input)
-                # ▲▲▲ [수정 완료] ▲▲▲
 
-
-        # 필드 초기화
         self.name_input.text = ""
         self.desc_input.text = ""
         self.loc_input.text = ""
@@ -3139,13 +3112,33 @@ class AddItemScreen(WhiteBgScreen):
             Popup(title='오류', content=Label(text='[신원 확인용 정보]는\n습득물 등록 시 필수 항목입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
 
-        image = self.image_path if self.image_path else "" 
         app = App.get_running_app()
         item_id = f"item_{int(time.time())}_{app.current_user_uid}" 
         
         if not app.user_token:
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
+
+        # 사진 업로드 처리
+        image_url = ""
+        if self.image_path:
+            try:
+                # 파일 확장자 추출 (없으면 jpg 기본)
+                ext = os.path.splitext(self.image_path)[1]
+                if not ext: ext = ".jpg"
+                
+                # Storage에 저장될 경로: images/아이템ID.확장자
+                cloud_filename = f"images/{item_id}{ext}"
+                
+                # Firebase Storage에 파일 업로드
+                storage.child(cloud_filename).put(self.image_path, app.user_token)
+                
+                # 업로드된 파일의 다운로드 URL 획득
+                image_url = storage.child(cloud_filename).get_url(None)
+                
+            except Exception as e:
+                print(f"이미지 업로드 실패: {e}")
+                # 실패 시에도 글은 등록되도록 함 (이미지 없이)
 
         if self.is_lost:
             status = 'lost'
@@ -3160,7 +3153,7 @@ class AddItemScreen(WhiteBgScreen):
             'loc': loc, 
             'time': time_val, 
             'contact': contact,
-            'image': image,
+            'image': image_url, # 로컬 경로 대신 URL 저장
             'category': category,
             'status': status,
             'registered_by_id': app.current_user, 
@@ -3196,7 +3189,6 @@ class ItemDetailScreen(WhiteBgScreen):
         self.add_widget(self.main_layout)
 
     def on_enter(self, *args):
-        """화면에 들어올 때마다 위젯을 다시 그림"""
         self.main_layout.clear_widgets()
 
         if not self.item_data:
@@ -3210,7 +3202,7 @@ class ItemDetailScreen(WhiteBgScreen):
             pos_hint={'bottom': 0}, padding=dp(10), spacing=dp(10)
         )
         with bottom_bar.canvas.before:
-            Color(0.95, 0.95, 0.95, 1) # 연한 회색 배경
+            Color(0.95, 0.95, 0.95, 1)
             self.bottom_rect = Rectangle(size=bottom_bar.size, pos=bottom_bar.pos)
         bottom_bar.bind(size=self._update_rect_cb(self.bottom_rect), 
                         pos=self._update_rect_cb(self.bottom_rect))
@@ -3269,8 +3261,8 @@ class ItemDetailScreen(WhiteBgScreen):
         scroll_content = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(15), padding=dp(10))
         scroll_content.bind(minimum_height=scroll_content.setter('height'))
 
-        # 3-1. 이미지
-        image = Image(
+        # 3-1. 이미지 (AsyncImage 적용)
+        image = AsyncImage(
             source=self.item_data.get('image') if self.item_data.get('image') else DEFAULT_IMAGE,
             size_hint_y=None,
             height=dp(300),
@@ -3335,7 +3327,7 @@ class ItemDetailScreen(WhiteBgScreen):
         loc_time_label.bind(size=loc_time_label.setter('text_size'))
         info_section.add_widget(loc_time_label)
         
-        info_section.add_widget(Label(size_hint_y=None, height=dp(15))) # 여백
+        info_section.add_widget(Label(size_hint_y=None, height=dp(15))) 
         
         desc_title_label = Label(
             text="[b]상세 설명[/b]",
@@ -3359,13 +3351,11 @@ class ItemDetailScreen(WhiteBgScreen):
         
         main_content_container.add_widget(scroll_view)
         
-        # --- 4. 최종 조립 ---
         self.main_layout.add_widget(main_content_container)
         self.main_layout.add_widget(bottom_bar)
 
 
     def show_claim_verification_popup(self, instance):
-        """'이 물건 주인입니다' 클릭 시 교차 검증 팝업"""
         app = App.get_running_app()
         item_id = self.item_data.get('item_id')
 
@@ -3379,7 +3369,7 @@ class ItemDetailScreen(WhiteBgScreen):
                          Popup(title='알림', content=Label(text='이미 신청한 물품입니다.\n관리자가 검토 중입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
                          return
         except Exception:
-            pass # 오류나면 그냥 진행
+            pass
 
         # 팝업 컨텐츠 레이아웃
         content_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
@@ -3429,7 +3419,6 @@ class ItemDetailScreen(WhiteBgScreen):
         popup.open()
 
     def submit_verification_claim(self, popup, item_id, details):
-        """신청 내용을 Firebase DB에 저장하고 아이템 상태를 변경"""
         if not details:
             print("상세 내용을 입력해주세요.") 
             return
@@ -3448,14 +3437,10 @@ class ItemDetailScreen(WhiteBgScreen):
             'claimer_id': app.current_user_uid,
             'claimer_nickname': app.current_user_nickname,
             'verification_details': details,
-            # status는 없음 (pending 상태)
         }
 
         try:
-            # 1. claims 경로에 저장
             db.child("claims").child(claim_id).set(claim_data, app.user_token)
-            
-            # 2. 해당 아이템 상태를 'found_pending'으로 변경
             db.child("all_items").child(item_id).update({'status': 'found_pending'}, app.user_token)
             
             popup.dismiss()
@@ -3624,7 +3609,6 @@ class LostAndFoundScreen(WhiteBgScreen):
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-        # 상단 헤더
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
 
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
@@ -3652,7 +3636,6 @@ class LostAndFoundScreen(WhiteBgScreen):
 
         main_layout.add_widget(header)
 
-        # 검색 및 필터링 UI
         search_filter_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(120), spacing=dp(10), padding=[dp(10), 0])
 
         keyword_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
@@ -3691,7 +3674,6 @@ class LostAndFoundScreen(WhiteBgScreen):
         search_filter_layout.add_widget(category_layout)
         main_layout.add_widget(search_filter_layout)
 
-        # 분실물 목록 스크롤 뷰
         scroll_view = ScrollView(size_hint=(1, 1))
         self.items_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
         self.items_grid.bind(minimum_height=self.items_grid.setter('height'))
@@ -3699,7 +3681,6 @@ class LostAndFoundScreen(WhiteBgScreen):
         scroll_view.add_widget(self.items_grid)
         main_layout.add_widget(scroll_view)
 
-        # 알림 키워드 등록 UI
         notification_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10), padding=[dp(10), 0])
         self.keyword_input = TextInput(hint_text='알림받을 키워드 (예: 지갑)', font_name=FONT_NAME, size_hint_x=0.7)
         keyword_button = get_styled_button("키워드 등록", [0.5, 0.5, 0.5, 1], [1,1,1,1], font_size='16sp')
@@ -3715,7 +3696,6 @@ class LostAndFoundScreen(WhiteBgScreen):
         self.bind(on_enter=self.refresh_list)
 
     def show_registration_choice_popup(self, instance):
-        """분실/습득 등록 선택 팝업"""
         popup_content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         
         with popup_content.canvas.before:
@@ -3752,7 +3732,6 @@ class LostAndFoundScreen(WhiteBgScreen):
 
 
     def search_items(self, *args):
-        """키워드와 카테고리로 아이템을 검색합니다 (Firebase DB 조회)"""
         app = App.get_running_app()
         if not app.user_token: return
 
@@ -3760,7 +3739,6 @@ class LostAndFoundScreen(WhiteBgScreen):
         category = self.category_spinner.text
         
         try:
-            # Firebase DB에서 'all_items' 가져오기
             items_node = db.child("all_items").get(app.user_token)
             items_dict = items_node.val()
             
@@ -3768,7 +3746,6 @@ class LostAndFoundScreen(WhiteBgScreen):
             if items_dict:
                 all_items_list = list(items_dict.values())
 
-            # 1. 상태 필터링 (분실 or 신청가능)
             base_list = [
                 item for item in all_items_list 
                 if item.get('status') == 'lost' or item.get('status') == 'found_available'
@@ -3776,11 +3753,9 @@ class LostAndFoundScreen(WhiteBgScreen):
             
             filtered_list = base_list
 
-            # 2. 카테고리 필터링
             if category != '전체':
                 filtered_list = [item for item in filtered_list if item.get('category') == category]
 
-            # 3. 키워드 필터링
             if keyword:
                 filtered_list = [
                     item for item in filtered_list
@@ -3789,7 +3764,6 @@ class LostAndFoundScreen(WhiteBgScreen):
                     or keyword in item.get('loc', '').lower()
                 ]
             
-            # 최신순 정렬 (item_id에 타임스탬프가 포함되어 있으므로 item_id 역순 정렬도 유효)
             filtered_list.sort(key=lambda x: x.get('item_id', ''), reverse=True)
 
             self.update_item_list(filtered_list)
@@ -3840,7 +3814,8 @@ class LostAndFoundScreen(WhiteBgScreen):
                 item_layout.item_data = item_data
                 item_layout.bind(on_press=self.view_item_details)
 
-                image = Image(
+                # AsyncImage 적용
+                image = AsyncImage(
                     source=item_data.get('image') if item_data.get('image') else DEFAULT_IMAGE,
                     size_hint_x=None,
                     width=dp(90),
@@ -3850,7 +3825,6 @@ class LostAndFoundScreen(WhiteBgScreen):
 
                 text_layout = BoxLayout(orientation='vertical', spacing=dp(5))
 
-                # 상태 텍스트 처리
                 status_val = item_data.get('status')
                 status_text = ""
                 if status_val == 'lost':
@@ -3858,7 +3832,7 @@ class LostAndFoundScreen(WhiteBgScreen):
                 elif status_val == 'found_available':
                     status_text = "[b][color=1010A0]습득[/color][/b]"
                 else:
-                    status_text = "[b][color=505050]완료[/color][/b]" # 예외 처리
+                    status_text = "[b][color=505050]완료[/color][/b]" 
                 
                 name_label = Label(
                     text=f"{status_text} {item_data['name']}", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True,
@@ -4525,23 +4499,7 @@ class MyApp(App):
 
         # (더미 데이터) 실제 앱에서는 이 데이터를 데이터베이스나 서버에서 가져와야 합니다.
 
-        # --- '아이디' / '닉네임' 분리 및 속성 추가 ---
 
-        
-
-        # (참고: self.users 더미 데이터는 이제 Firebase로 대체되어 사용되지 않습니다.)
-
-        self.users = {
-
-            # '아이디': {'password': '비밀번호', 'role': '역할', 'nickname': '닉네임'}
-
-            'admin': {'password': 'admin1234', 'role': 'admin', 'nickname': '관리자'},
-
-            'user': {'password': '1234', 'role': 'user', 'nickname': '테스트유저'},
-
-            'member': {'password': 'member123', 'role': 'user', 'nickname': '테스트멤버'}
-
-        }
 
         self.current_user = 'guest' # 로그인 아이디 저장
 
@@ -4562,116 +4520,22 @@ class MyApp(App):
         # --- ---
 
 
-
-        self.all_clubs = [
-
-            {'name': '축구 동아리 KickOff', 'short_desc': '축구를 사랑하는 사람들의 모임입니다.', 'long_desc': '매주 수요일 오후 4시에 대운동장에서 정기적으로 활동합니다. 축구를 좋아하거나 배우고 싶은 모든 학생을 환영합니다!', 
-
-             'president': 'user', 'members': ['user', 'member'], 
-
-             'applications': [{'user':'test_user_id', 'user_nickname': '신청자닉네임', 'intro':'열심히 하겠습니다!'}], 
-
-             'announcements': ["이번 주 활동은 쉽니다."], 'activities': ["지난 주 친선 경기 진행"], 'reviews': ["(테스트멤버님) 분위기 좋아요!"]},
-
-            {'name': '코딩 스터디 CodeHive', 'short_desc': '파이썬, 자바 등 함께 공부하는 코딩 모임', 'long_desc': '알고리즘 스터디와 프로젝트 개발을 함께 진행합니다. 초보자도 대환영!', 
-
-             'president': 'admin', 'members': ['admin'], 'applications': [], 'announcements': [], 'activities': [], 'reviews': []},
-
-        ]
-
-        self.pending_clubs = []
-
-
-
-        
-
-        self.all_items = [
-
-             {
-
-                'item_id': 'item_1', 'name': '검은색 에어팟 프로', 'desc': '케이스에 스티커 붙어있음', 
-
-                'loc': '중앙도서관 1층', 'time': '13:00', 'contact': '010-1111-2222',
-
-                'image': '', 'category': '전자기기', 
-
-                'status': 'lost', 
-
-                'registered_by_id': 'user', 'registered_by_nickname': '테스트유저'
-
-             },
-
-             {
-
-                'item_id': 'item_2', 'name': '파란색 학생증', 'desc': '컴퓨터공학과 2학년', 
-
-                'loc': '제1공학관 3층', 'time': '09:10', 'contact': '010-3333-4444',
-
-                'image': '', 'category': '지갑/카드', 
-
-                'status': 'found_pending', # (claims 더미 데이터와 맞춤)
-
-                'registered_by_id': 'member', 'registered_by_nickname': '테스트멤버'
-
-             },
-
-             {
-
-                'item_id': 'item_4_returned', 'name': '갈색 장지갑', 'desc': '신분증 있음', 
-
-                'loc': '학생회관 식당', 'time': '12:30', 'contact': '학생회관 분실물 센터',
-
-                'image': '', 'category': '지갑/카드', 
-
-                'status': 'found_returned', 
-
-                'registered_by_id': 'admin', 'registered_by_nickname': '관리자'
-
-             }
-
-        ]
-
-        self.pending_items = [
-
-            {
-
-                'item_id': 'item_3_pending', 'name': '주인을 찾습니다(아이패드)', 'desc': '실버 색상, 펜슬 포함', 
-
-                'loc': '중앙도서관 2층', 'time': '15:00', 'contact': '010-5555-6666',
-
-                'image': '', 'category': '전자기기', 
-
-                'status': 'found_available', # (승인 대기중일때도 기본 상태는 found_available)
-
-                'registered_by_id': 'user', 'registered_by_nickname': '테스트유저'
-
-            }
-
-        ]
-
         self.notification_keywords = ['지갑'] # 알림 테스트용
-
-        
-
-        self.claims = [
-
-            {'item_id': 'item_2', 
-
-             'claimer_id': 'user', 
-
-             'claimer_nickname': '테스트유저',
-
-             'verification_details': '파란색 학생증 케이스 뒷면에 노란색 스마일 스티커가 붙어있습니다.'
-
-            }
-
-        ]
-
-
-
 
 
     def build(self):
+        global firebase, auth, db, storage 
+        
+        try:
+            firebase = pyrebase.initialize_app(config)
+            auth = firebase.auth()
+            db = firebase.database()
+            storage = firebase.storage() # 스토리지 객체 초기화
+            print("Firebase 초기화 성공")
+        except Exception as e:
+            print(f"Firebase 초기화 실패: {e}")
+        
+
         self.title = "Campus Link"
 
         sm = ScreenManager()
