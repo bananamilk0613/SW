@@ -54,6 +54,9 @@ from kivy.uix.behaviors import ButtonBehavior # 커스텀 버튼 위젯을 위�
 
 from kivy.resources import resource_find
 
+# 날짜 및 시간 처리를 위해 datetime 임포트
+from datetime import datetime
+
 
 
 # 스마트폰 기능 접근을 위한 plyer 임포트 (PC 환경 예외 처리 포함)
@@ -1886,211 +1889,142 @@ class ClaimManagementScreen(WhiteBgScreen):
 # --------------------------------------------------------
 
 class ClubScreen(WhiteBgScreen):
-
     """동아리 목록을 보여주는 메인 화면"""
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
 
-
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('main'))
-
         header.add_widget(back_button)
-
-
 
         header.add_widget(Label(text="[b]동아리 게시판[/b]", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, font_size='26sp'))
 
-
-
         create_button = get_styled_button("개설 신청", [0.3, 0.7, 0.4, 1], [1, 1, 1, 1], font_size='18sp')
-
         create_button.height = dp(50)
-
         create_button.size_hint_x = None
-
         create_button.width = dp(120)
-
         create_button.bind(on_press=lambda *args: self.go_to_screen('club_create'))
-
         header.add_widget(create_button)
-
         main_layout.add_widget(header)
 
-
-
         search_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10), padding=[dp(10), 0, dp(10), 0])
-
         self.search_input = TextInput(hint_text='동아리 이름 검색', font_name=FONT_NAME, size_hint_x=0.8, multiline=False)
-
         search_button = get_styled_button("검색", [0.2, 0.6, 1, 1], [1, 1, 1, 1], font_size='18sp')
-
         search_button.size_hint_x = 0.2
-
         search_button.height = dp(50)
-
         search_button.bind(on_press=self.search_clubs)
 
-
-
         search_layout.add_widget(self.search_input)
-
         search_layout.add_widget(search_button)
-
         main_layout.add_widget(search_layout)
 
-
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.results_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.results_grid.bind(minimum_height=self.results_grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.results_grid)
-
         main_layout.add_widget(scroll_view)
-
-
 
         self.add_widget(main_layout)
 
-
-
         self.bind(on_enter=self.refresh_list)
-
-
 
     def refresh_list(self, *args):
         app = App.get_running_app()
         
         if not app.user_token:
-            self.update_club_list([]) # 토큰 없으면 빈 리스트로
+            self.update_club_list([]) 
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
             
         try:
-            # 로컬 app.all_clubs 대신 Firebase DB에서 직접 가져옵니다.
             clubs_node = db.child("all_clubs").get(app.user_token)
-            
-            clubs_dict = clubs_node.val() # 딕셔너리 형태로 받음
+            clubs_dict = clubs_node.val() 
             
             if clubs_dict:
-                # 딕셔너리의 값들(value)만 리스트로 변환
                 clubs_list = list(clubs_dict.values())
-                self.update_club_list(clubs_list)
+                
+                # 인기도 점수 기준 내림차순 정렬
+                sorted_list = sorted(
+                    clubs_list, 
+                    key=lambda club: club.get("popularity_score", 0), 
+                    reverse=True
+                )
+                self.update_club_list(sorted_list)
             else:
-                # DB에 아무것도 없으면 빈 리스트로
                 self.update_club_list([])
 
         except Exception as e:
-            self.update_club_list([]) # 오류 시 빈 리스트
+            self.update_club_list([]) 
             Popup(title='DB 오류', content=Label(text=f'데이터 읽기 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
         
-        self.search_input.text = "" # 검색창 초기화
-
-
+        self.search_input.text = "" 
 
     def update_club_list(self, clubs):
-
         self.results_grid.clear_widgets()
-
         if not clubs:
-
             self.results_grid.add_widget(Label(text="표시할 동아리가 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
-
         else:
-
             for club in clubs:
-
                 item = ClubListItem(
-
                     orientation='vertical',
-
                     padding=dp(15),
-
                     spacing=dp(5),
-
                     size_hint_y=None,
-
                     height=dp(80)
-
                 )
 
-
-
                 item.club_data = club
-
                 item.bind(on_press=self.view_club_details)
 
-
-
                 name_label = Label(text=f"[b]{club['name']}[/b]", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(30))
-
                 desc_label = Label(text=club['short_desc'], font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], halign='left', valign='middle', size_hint_y=None, height=dp(20))
 
-
-
                 for label in [name_label, desc_label]:
-
                     label.bind(size=label.setter('text_size'))
-
                     item.add_widget(label)
-
-
 
                 self.results_grid.add_widget(item)
 
-
-
     def view_club_details(self, instance):
-
-        """ 동아리 상세 정보 화면으로 이동 """
-
         detail_screen = self.manager.get_screen('club_detail')
-
-        detail_screen.club_data = instance.club_data # 선택된 동아리 정보 전달
-
+        detail_screen.club_data = instance.club_data 
         self.go_to_screen('club_detail')
 
-
-
     def search_clubs(self, instance):
-
         app = App.get_running_app()
-
         search_term = self.search_input.text.lower()
-
-        if not search_term:
-
-            results = app.all_clubs
-
-        else:
-
-            results = [club for club in app.all_clubs if search_term in club['name'].lower()]
-
-        self.update_club_list(results)
-
+        
+        try:
+            clubs_node = db.child("all_clubs").get(app.user_token)
+            clubs_dict = clubs_node.val()
+            
+            if clubs_dict:
+                all_clubs = list(clubs_dict.values())
+                if not search_term:
+                    results = all_clubs
+                else:
+                    results = [club for club in all_clubs if search_term in club['name'].lower()]
+                
+                # 검색 결과도 인기도 순 정렬
+                sorted_results = sorted(
+                    results, 
+                    key=lambda club: club.get("popularity_score", 0), 
+                    reverse=True
+                )
+                self.update_club_list(sorted_results)
+            else:
+                self.update_club_list([])
+                
+        except Exception:
+            pass
 
 
 
@@ -2101,23 +2035,31 @@ class ClubDetailScreen(WhiteBgScreen):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # 수직 BoxLayout이 헤더, 스크롤, 하단바를 관리합니다.
+        # 수직 BoxLayout 사용
         self.main_layout = BoxLayout(orientation='vertical')
         self.add_widget(self.main_layout)
 
     def on_enter(self, *args):
         """화면에 들어올 때마다 위젯을 다시 그림"""
-        self.main_layout.clear_widgets() # 이전 위젯들 제거
+        
+        # 1. 기존 위젯 모두 제거
+        self.main_layout.clear_widgets() 
 
         if self.club_data:
             app = App.get_running_app()
             
-            # --- (로그인한 사용자의 권한 확인) ---
+            # (알고리즘) 클릭 로그 저장 & 점수 갱신
+            if app.user_token:
+                 club_id = self.club_data.get('club_id')
+                 self.update_popularity_score(club_id)
+
             is_president = app.current_user_uid == self.club_data.get('president')
             is_member = app.current_user_uid in self.club_data.get('members', {})
 
             
-            # --- 1. 헤더 (뒤로가기, 제목, 메뉴 버튼) ---
+            # ---------------------------------------------------------
+            # [A] 헤더 생성 (아직 main_layout에 붙이지 않음!)
+            # ---------------------------------------------------------
             header = BoxLayout(
                 orientation='horizontal', 
                 size_hint_y=None, 
@@ -2125,7 +2067,6 @@ class ClubDetailScreen(WhiteBgScreen):
                 spacing=dp(10)
             )
             
-            # '뒤로가기 버튼'
             back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
             back_button.height = dp(50)
             back_button.size_hint_x = None
@@ -2133,19 +2074,19 @@ class ClubDetailScreen(WhiteBgScreen):
             back_button.bind(on_press=lambda *args: self.go_to_screen('club'))
             header.add_widget(back_button)
             
-            # '제목'
             header.add_widget(Label(text=f"[b]{self.club_data['name']}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
             
-            # '메뉴' 버튼 (사이드창)
             menu_button = get_styled_button("메뉴", [0.1, 0.4, 0.7, 1], [1, 1, 1, 1], font_size='18sp')
             menu_button.height = dp(50)
             menu_button.size_hint_x = None
             menu_button.width = dp(90)
             menu_button.bind(on_press=self.show_club_menu_popup) 
             header.add_widget(menu_button)
-            
-            
-            # --- 2. 하단 버튼바 ('신청하기' 또는 빈 공간) ---
+
+
+            # ---------------------------------------------------------
+            # [B] 하단 버튼바 생성 (아직 붙이지 않음!)
+            # ---------------------------------------------------------
             bottom_bar = BoxLayout(
                 size_hint_y=None, 
                 height=dp(80), 
@@ -2153,38 +2094,35 @@ class ClubDetailScreen(WhiteBgScreen):
                 spacing=dp(10)
             )
             with bottom_bar.canvas.before:
-                Color(0.95, 0.95, 0.95, 1) # 연한 회색 배경
+                Color(0.95, 0.95, 0.95, 1) 
                 self.bottom_rect = Rectangle(size=bottom_bar.size, pos=bottom_bar.pos)
             bottom_bar.bind(size=self._update_rect_cb(self.bottom_rect), 
                             pos=self._update_rect_cb(self.bottom_rect))
 
             if is_president or is_member:
-                # (멤버/회장이면 하단 버튼바는 비워둠)
-                pass
+                pass # 회원은 하단바 비움
             else:
-                # (비회원일 때 '신청하기' 버튼 표시)
                 apply_button = get_styled_button("신청하기", [0.2, 0.6, 1, 1], [1, 1, 1, 1])
                 apply_button.bind(on_press=self.go_to_application) 
                 bottom_bar.add_widget(apply_button)
 
-
-            # --- 3. 중간 스크롤 영역 ---
+            # ---------------------------------------------------------
+            # [C] 중간 스크롤 영역 생성
+            # ---------------------------------------------------------
             scroll_view = ScrollView(
                 size_hint=(1, 1) 
             )
             
-            # (padding을 10으로 줘서 박스들 사이에 간격을 둠)
             content_layout = BoxLayout(orientation='vertical', spacing=dp(10), size_hint_y=None, padding=dp(10))
             content_layout.bind(minimum_height=content_layout.setter('height'))
             scroll_view.add_widget(content_layout)
 
             
-            
-            # --- 동아리 소개 박스 ---
+            # [동아리 소개 박스]
             intro_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(15), spacing=dp(5))
-            intro_box.bind(minimum_height=intro_box.setter('height')) # 내용물에 맞게 높이 조절
+            intro_box.bind(minimum_height=intro_box.setter('height')) 
             with intro_box.canvas.before:
-                Color(0.95, 0.95, 0.95, 1) # 회색 배경
+                Color(0.95, 0.95, 0.95, 1) 
                 self.intro_bg_rect = RoundedRectangle(pos=intro_box.pos, size=intro_box.size, radius=[dp(5)])
             intro_box.bind(pos=lambda i, v: setattr(self.intro_bg_rect, 'pos', v),
                              size=lambda i, v: setattr(self.intro_bg_rect, 'size', v))
@@ -2198,34 +2136,31 @@ class ClubDetailScreen(WhiteBgScreen):
                                  texture_size=lambda *x: long_desc_label.setter('height')(long_desc_label, long_desc_label.texture_size[1]))
             intro_box.add_widget(long_desc_label)
             
-            content_layout.add_widget(intro_box) # 최종 스크롤 뷰에 '소개 박스' 추가
-            # --- 동아리 소개 박스 끝 ---
+            content_layout.add_widget(intro_box)
 
 
-            # --- (공지사항, 활동내역, 자유게시판, 후기 박스 루프) ---
+            # [섹션 루프]
             for section_title, data_key in [
                 ("[b]공지사항[/b]", "announcements"), 
                 ("[b]활동 내역[/b]", "activities"), 
                 ("[b]자유게시판[/b]", "free_board"), 
                 ("[b]후기[/b]", "reviews")
             ]:
-                # 각 섹션을 감쌀 회색 박스
                 section_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(15), spacing=dp(5))
                 section_box.bind(minimum_height=section_box.setter('height'))
                 with section_box.canvas.before:
-                    Color(0.95, 0.95, 0.95, 1) # 회색 배경
+                    Color(0.95, 0.95, 0.95, 1) 
                     bg_rect = RoundedRectangle(pos=section_box.pos, size=section_box.size, radius=[dp(5)])
                 section_box.bind(pos=lambda i, v, r=bg_rect: setattr(r, 'pos', v),
                                  size=lambda i, v, r=bg_rect: setattr(r, 'size', v))
 
-                # 소제목을 가로 BoxLayout으로 변경
+                # 소제목
                 title_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(40))
-                
                 title_label = Label(text=section_title, font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='20sp', halign='left')
                 title_label.bind(size=title_label.setter('text_size'))
                 title_layout.add_widget(title_label)
                 
-                # '자유게시판' 소제목 옆에 '글쓰기' 버튼 추가
+                # '자유게시판' 소제목 옆 글쓰기 버튼
                 if data_key == 'free_board' and (is_president or is_member):
                     write_button_small = get_styled_button("글쓰기", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='16sp')
                     write_button_small.height = dp(40)
@@ -2239,35 +2174,129 @@ class ClubDetailScreen(WhiteBgScreen):
                 section_data = self.club_data.get(data_key)
 
                 if section_data: 
+                    # 데이터 리스트 변환 및 정렬
+                    items_list = []
                     for item in section_data.values():
-                        item_label = Label(text=f"- {item}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], size_hint_y=None, halign='left')
+                        if isinstance(item, dict) and 'content' in item:
+                            items_list.append(item)
+                        else:
+                            items_list.append({'content': str(item), 'timestamp': 0})
+                    
+                    # 최신순 정렬
+                    items_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+                    
+                    # 자유게시판은 최대 4개까지만 표시
+                    if data_key == 'free_board':
+                        display_list = items_list[:4]
+                    else:
+                        display_list = items_list
+
+                    for item in display_list:
+                        text_to_show = item['content']
+                        item_label = Label(text=f"- {text_to_show}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], size_hint_y=None, halign='left')
                         item_label.bind(width=lambda *x: item_label.setter('text_size')(item_label, (item_label.width, None)),
                                         texture_size=lambda *x: item_label.setter('height')(item_label, item_label.texture_size[1]))
                         section_box.add_widget(item_label)
+                    
+                    # '더보기' 버튼 (자유게시판 && 4개 초과 시)
+                    if data_key == 'free_board' and len(items_list) > 4:
+                        more_button = Button(
+                            text="더보기...", 
+                            font_name=FONT_NAME, 
+                            color=[0.5, 0.5, 0.5, 1], 
+                            background_color=[0,0,0,0], 
+                            background_normal='',
+                            size_hint_y=None, 
+                            height=dp(30)
+                        )
+                        more_button.bind(on_press=self.go_to_all_free_board)
+                        section_box.add_widget(more_button)
+
                 else:
                     empty_label = Label(text="아직 내용이 없습니다.", font_name=FONT_NAME, color=[0.5,0.5,0.5,1], size_hint_y=None, height=dp(30), halign='left')
                     empty_label.bind(size=empty_label.setter('text_size'))
                     section_box.add_widget(empty_label)
                 
-                content_layout.add_widget(section_box) # 최종 스크롤 뷰에 '섹션 박스' 추가
-
-            
-            # --- 4. 최종 조립 ---
-            # (BoxLayout에 헤더, 스크롤(중간), 하단바 순서대로 추가)
+                content_layout.add_widget(section_box) 
+                
             self.main_layout.add_widget(header)
             self.main_layout.add_widget(scroll_view) 
             self.main_layout.add_widget(bottom_bar)
     
     
+    def update_popularity_score(self, club_id):
+        """활동(0.5), 자유(0.3), 클릭(0.01) 가중치 및 4학기 시간 반감 적용 알고리즘"""
+        app = App.get_running_app()
+        if not app.user_token: return
+
+        try:
+            club_data = db.child(f"all_clubs/{club_id}").get(app.user_token).val()
+            if not club_data: return
+
+            current_time = int(time.time())
+            
+            def get_semester_index(timestamp):
+                dt = datetime.fromtimestamp(timestamp)
+                year = dt.year
+                month = dt.month
+                if 3 <= month <= 8:
+                    return year * 2 + 1 
+                elif month >= 9:
+                    return year * 2 + 2
+                else:
+                    return (year - 1) * 2 + 2
+
+            current_semester_idx = get_semester_index(time.time())
+            total_score = 0.0
+
+            def calculate_decayed_score(items, base_weight):
+                sub_total = 0.0
+                if not items: return 0.0
+                
+                if isinstance(items, dict):
+                    values = items.values()
+                else:
+                    return 0.0
+
+                for item in values:
+                    if isinstance(item, dict) and 'timestamp' in item:
+                        ts = item['timestamp']
+                    elif isinstance(item, int) or isinstance(item, float):
+                        ts = item
+                    else:
+                        continue 
+                    
+                    content_semester_idx = get_semester_index(ts)
+                    elapsed_semesters = current_semester_idx - content_semester_idx
+
+                    if elapsed_semesters < 0: elapsed_semesters = 0
+
+                    if elapsed_semesters >= 4:
+                        continue 
+                    
+                    decay_factor = 0.5 ** elapsed_semesters
+                    sub_total += base_weight * decay_factor
+                
+                return sub_total
+
+            # 클릭 점수는 제외
+            score_activity = calculate_decayed_score(club_data.get('activities'), 0.5)
+            score_free = calculate_decayed_score(club_data.get('free_board'), 0.3)
+            
+            total_score = score_activity + score_free
+
+            db.child(f"all_clubs/{club_id}/popularity_score").set(round(total_score, 2), app.user_token)
+
+        except Exception as e:
+            print(f"점수 계산 오류: {e}")
+
     def _update_rect_cb(self, rect):
-        """하단 바 배경 업데이트를 위한 콜백 함수"""
         def update_rect(instance, value):
             rect.pos = instance.pos
             rect.size = instance.size
         return update_rect
 
     def show_club_menu_popup(self, instance):
-        """(사이드창) '관리', '후기', '탈퇴' 버튼이 있는 사이드 팝업"""
         app = App.get_running_app()
         popup = Popup(
             title="", separator_height=0, size_hint=(0.6, 1.0),
@@ -2277,7 +2306,7 @@ class ClubDetailScreen(WhiteBgScreen):
 
         full_popup_content = BoxLayout(orientation='vertical')
         with full_popup_content.canvas.before:
-            Color(1, 1, 1, 1) # 흰색 배경
+            Color(1, 1, 1, 1) 
             content_bg = Rectangle(size=full_popup_content.size, pos=full_popup_content.pos)
         full_popup_content.bind(size=lambda i, v: setattr(content_bg, 'size', v),
                                 pos=lambda i, v: setattr(content_bg, 'pos', v))
@@ -2319,23 +2348,19 @@ class ClubDetailScreen(WhiteBgScreen):
             content_layout.add_widget(withdraw_button)
             
         else: # 비회원
-            # '신청하기' 버튼은 하단 바로 이동했으므로, 여기서는 비회원임을 표시
             content_layout.add_widget(Label(text="비회원입니다.", font_name=FONT_NAME, color=[0.5,0.5,0.5,1]))
             
-        content_layout.add_widget(Label()) # 스페이서
+        content_layout.add_widget(Label()) 
         full_popup_content.add_widget(content_layout)
         popup.content = full_popup_content
         popup.open()
 
     
     def withdraw_from_club(self, instance):
-        """동아리 탈퇴 확인 팝업을 띄웁니다."""
-        
         popup_content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         popup_content.add_widget(Label(text='정말 동아리를 탈퇴하시겠습니까?', font_name=FONT_NAME, color=[0,0,0,1]))
         
         button_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
-        
         yes_button = get_styled_button("예, 탈퇴합니다", [0.8, 0.2, 0.2, 1], [1,1,1,1])
         no_button = get_styled_button("아니요", [0.5, 0.5, 0.5, 1], [1,1,1,1])
         
@@ -2354,7 +2379,6 @@ class ClubDetailScreen(WhiteBgScreen):
         popup.open()
 
     def perform_withdraw(self, popup_to_dismiss):
-        """Firebase DB에서 멤버 정보를 삭제합니다."""
         app = App.get_running_app()
         
         if not self.club_data or not app.user_token:
@@ -2382,11 +2406,16 @@ class ClubDetailScreen(WhiteBgScreen):
             Popup(title='DB 오류', content=Label(text=f'탈퇴 처리 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
     def go_to_free_board_post(self, instance):
-        """자유게시판 글쓰기 화면으로 이동합니다."""
         post_screen = self.manager.get_screen('post_screen')
         post_screen.club_data = self.club_data
         post_screen.post_type = 'free_board' 
         self.go_to_screen('post_screen')
+
+    def go_to_all_free_board(self, instance):
+        """전체보기 화면으로 이동"""
+        free_board_screen = self.manager.get_screen('club_free_board')
+        free_board_screen.club_data = self.club_data
+        self.go_to_screen('club_free_board')
     
     def go_to_application(self, instance):
         app_screen = self.manager.get_screen('club_apply')
@@ -2401,9 +2430,98 @@ class ClubDetailScreen(WhiteBgScreen):
     def go_to_post_screen(self, instance):
         post_screen = self.manager.get_screen('post_screen')
         post_screen.club_data = self.club_data
-        post_screen.post_type = 'review'
+        post_screen.post_type = 'review'    
         self.go_to_screen('post_screen')
 
+
+class ClubFreeBoardScreen(WhiteBgScreen):
+    """자유게시판의 모든 글을 보여주는 전체보기 화면"""
+    club_data = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+        self.add_widget(self.main_layout)
+
+    def on_enter(self, *args):
+        self.main_layout.clear_widgets()
+
+        if self.club_data:
+            # --- 헤더 ---
+            header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10))
+            
+            back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
+            back_button.height = dp(50)
+            back_button.size_hint_x = None
+            back_button.width = dp(60)
+            back_button.bind(on_press=lambda *args: self.go_to_screen('club_detail'))
+            header.add_widget(back_button)
+            
+            header.add_widget(Label(text=f"[b]{self.club_data['name']} 자유게시판[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='24sp'))
+            self.main_layout.add_widget(header)
+
+            # --- 게시글 목록 스크롤 ---
+            scroll_view = ScrollView()
+            content_layout = BoxLayout(orientation='vertical', spacing=dp(10), size_hint_y=None, padding=dp(10))
+            content_layout.bind(minimum_height=content_layout.setter('height'))
+            scroll_view.add_widget(content_layout)
+            self.main_layout.add_widget(scroll_view)
+
+            # 데이터 가져오기 및 정렬 (최신순)
+            free_board_data = self.club_data.get('free_board', {})
+            posts_list = []
+            
+            if free_board_data:
+                for item in free_board_data.values():
+                    if isinstance(item, dict) and 'content' in item:
+                        posts_list.append(item)
+                    else:
+                        # 구형 데이터 호환용
+                        posts_list.append({'content': str(item), 'timestamp': 0})
+                
+                # 타임스탬프 기준 내림차순 정렬 (최신글이 위로)
+                posts_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+
+            if posts_list:
+                for post in posts_list:
+                    # 각 게시글을 박스 형태로 예쁘게 표시
+                    post_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
+                    post_box.bind(minimum_height=post_box.setter('height'))
+                    
+                    with post_box.canvas.before:
+                        Color(0.95, 0.95, 0.95, 1)
+                        RoundedRectangle(pos=post_box.pos, size=post_box.size, radius=[dp(5)])
+                    
+                    # (배경 업데이트 바인딩)
+                    def update_bg(instance, value, box=post_box):
+                         box.canvas.before.clear()
+                         with box.canvas.before:
+                             Color(0.95, 0.95, 0.95, 1)
+                             RoundedRectangle(pos=box.pos, size=box.size, radius=[dp(5)])
+                    post_box.bind(pos=update_bg, size=update_bg)
+
+                    # 내용 표시
+                    content_label = Label(text=post['content'], font_name=FONT_NAME, color=[0.2,0.2,0.2,1], size_hint_y=None, halign='left')
+                    content_label.bind(width=lambda *x: content_label.setter('text_size')(content_label, (content_label.width, None)),
+                                       texture_size=lambda *x: content_label.setter('height')(content_label, content_label.texture_size[1]))
+                    post_box.add_widget(content_label)
+                    
+                    # 날짜 표시 (선택 사항)
+                    if post.get('timestamp'):
+                        ts_date = datetime.fromtimestamp(post['timestamp']).strftime('%Y-%m-%d %H:%M')
+                        date_label = Label(text=ts_date, font_name=FONT_NAME, color=[0.6,0.6,0.6,1], font_size='12sp', size_hint_y=None, height=dp(15), halign='right')
+                        date_label.bind(size=date_label.setter('text_size'))
+                        post_box.add_widget(date_label)
+
+                    content_layout.add_widget(post_box)
+            else:
+                content_layout.add_widget(Label(text="작성된 글이 없습니다.", font_name=FONT_NAME, color=[0.5,0.5,0.5,1], size_hint_y=None, height=dp(50)))
+
+    def go_to_screen(self, screen_name):
+        if screen_name == 'club_detail':
+            detail_screen = self.manager.get_screen(screen_name)
+            detail_screen.club_data = self.club_data
+        self.manager.current = screen_name
 
 
 class ClubCreateScreen(WhiteBgScreen):
@@ -3040,7 +3158,6 @@ class PostScreen(WhiteBgScreen):
         }
         title = type_map.get(self.post_type, '글')
 
-        # 헤더
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10))
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
         back_button.height = dp(50)
@@ -3051,11 +3168,9 @@ class PostScreen(WhiteBgScreen):
         header.add_widget(Label(text=f"[b]{title} 작성[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
         self.main_layout.add_widget(header)
 
-        # 입력 필드
         self.content_input = TextInput(hint_text=f'{title} 내용을 입력하세요.', font_name=FONT_NAME, size_hint_y=0.8, padding=dp(15))
         self.main_layout.add_widget(self.content_input)
 
-        # 등록 버튼
         submit_button = get_styled_button("등록하기", [0.2, 0.6, 1, 1], [1, 1, 1, 1])
         submit_button.bind(on_press=self.submit_post)
         self.main_layout.add_widget(submit_button)
@@ -3068,7 +3183,6 @@ class PostScreen(WhiteBgScreen):
             
         app = App.get_running_app()
         
-        # 후기 또는 자유게시판 작성 시 닉네임 정보 포함
         if self.post_type == 'review' or self.post_type == 'free_board':
             content = f"({app.current_user_nickname}님) {content}"
 
@@ -3080,7 +3194,6 @@ class PostScreen(WhiteBgScreen):
         }
         data_key = key_map.get(self.post_type)
 
-        # Firebase DB에 'push'로 쓰기
         if self.club_data and data_key and app.user_token:
             try:
                 club_id = self.club_data.get('club_id')
@@ -3088,14 +3201,18 @@ class PostScreen(WhiteBgScreen):
                     Popup(title='오류', content=Label(text='동아리 ID가 없습니다.', font_name=FONT_NAME), size_hint=(0.7, 0.3)).open()
                     return
                 
-                #  Firebase DB의 해당 경로에 'push' (고유 ID 생성하며 추가)
-                path = f"all_clubs/{club_id}/{data_key}"
-                db.child(path).push(content, app.user_token) 
+                # 내용과 함께 타임스탬프 저장 (알고리즘용)
+                post_data = {
+                    'content': content,
+                    'timestamp': int(time.time())
+                }
                 
-                # (DB에 쓴 후, 로컬 club_data도 갱신 - UX용)
+                path = f"all_clubs/{club_id}/{data_key}"
+                db.child(path).push(post_data, app.user_token) 
+                
                 if data_key not in self.club_data:
                     self.club_data[data_key] = {}
-                self.club_data[data_key][content[:10]] = content # (임시 키)
+                self.club_data[data_key][content[:10]] = post_data 
                 
                 popup = Popup(title='성공', content=Label(text='등록이 완료되었습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
                 popup.bind(on_dismiss=lambda *args: self.go_to_screen('club_detail'))
@@ -3108,7 +3225,6 @@ class PostScreen(WhiteBgScreen):
 
 
     def go_to_screen(self, screen_name):
-        # 상세 화면으로 돌아갈 때 데이터가 갱신되도록 club_data를 다시 전달
         if screen_name == 'club_detail':
             detail_screen = self.manager.get_screen(screen_name)
             detail_screen.club_data = self.club_data
@@ -5743,6 +5859,7 @@ class MyApp(App):
         # 동아리 관련 화면들 
         sm.add_widget(ClubScreen(name='club'))
         sm.add_widget(ClubDetailScreen(name='club_detail'))
+        sm.add_widget(ClubFreeBoardScreen(name='club_free_board'))
         sm.add_widget(ClubCreateScreen(name='club_create'))
         sm.add_widget(ClubApplicationScreen(name='club_apply'))
         sm.add_widget(ClubManagementScreen(name='club_management'))
