@@ -136,7 +136,13 @@ class FirebaseREST:
         url = f"{FB_AUTH_URL}:signInWithPassword?key={FB_API_KEY}"
         payload = {"email": email, "password": password, "returnSecureToken": True}
         try:
-            res = requests.post(url, json=payload)
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code != 200:
+                try:
+                    error_data = res.json()
+                    return {"error": error_data.get("error", {"message": f"HTTP {res.status_code}"})}
+                except:
+                    return {"error": {"message": f"HTTP Error {res.status_code}"}}
             return res.json()
         except Exception as e:
             return {"error": {"message": str(e)}}
@@ -146,7 +152,13 @@ class FirebaseREST:
         url = f"{FB_AUTH_URL}:signUp?key={FB_API_KEY}"
         payload = {"email": email, "password": password, "returnSecureToken": True}
         try:
-            res = requests.post(url, json=payload)
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code != 200:
+                 try:
+                    error_data = res.json()
+                    return {"error": error_data.get("error", {"message": f"HTTP {res.status_code}"})}
+                 except:
+                     return {"error": {"message": f"HTTP Error {res.status_code}"}}
             return res.json()
         except Exception as e:
             return {"error": {"message": str(e)}}
@@ -156,19 +168,23 @@ class FirebaseREST:
         url = f"{FB_AUTH_URL}:getOobConfirmationCode?key={FB_API_KEY}"
         payload = {"requestType": "VERIFY_EMAIL", "idToken": id_token}
         try:
-            requests.post(url, json=payload)
-        except:
-            pass
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code != 200:
+                print(f"이메일 발송 실패: {res.text}") # 에러 로그 출력
+        except Exception as e:
+            print(f"이메일 발송 중 예외 발생: {e}") # 예외 로그 출력
 
     @staticmethod
     def get_user_info(id_token):
         url = f"{FB_AUTH_URL}:lookup?key={FB_API_KEY}"
         payload = {"idToken": id_token}
         try:
-            res = requests.post(url, json=payload)
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code != 200:
+                return {}
             return res.json()
         except Exception as e:
-            return {"error": {"message": str(e)}}
+            return {}
 
     @staticmethod
     def db_get(path, token=None):
@@ -176,7 +192,9 @@ class FirebaseREST:
         if token:
             url += f"?auth={token}"
         try:
-            res = requests.get(url)
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200:
+                return None
             return res.json()
         except:
             return None
@@ -185,25 +203,29 @@ class FirebaseREST:
     def db_put(path, data, token):
         url = f"{FB_DB_URL}/{path}.json?auth={token}"
         try:
-            res = requests.put(url, json=data)
+            res = requests.put(url, json=data, timeout=10)
+            if res.status_code != 200:
+                 return {}
             return res.json()
         except Exception as e:
-            raise e
+            return {}
 
     @staticmethod
     def db_post(path, data, token):
         url = f"{FB_DB_URL}/{path}.json?auth={token}"
         try:
-            res = requests.post(url, json=data)
+            res = requests.post(url, json=data, timeout=10)
+            if res.status_code != 200:
+                 return {}
             return res.json()
         except Exception as e:
-            raise e
+            return {}
 
     @staticmethod
     def db_delete(path, token):
         url = f"{FB_DB_URL}/{path}.json?auth={token}"
         try:
-            requests.delete(url)
+            requests.delete(url, timeout=10)
         except:
             pass
     
@@ -211,35 +233,34 @@ class FirebaseREST:
     def db_update(path, data, token):
         url = f"{FB_DB_URL}/{path}.json?auth={token}"
         try:
-            res = requests.patch(url, json=data)
+            res = requests.patch(url, json=data, timeout=10)
+            if res.status_code != 200:
+                 return {}
             return res.json()
         except Exception as e:
-            raise e
+            return {}
 
     @staticmethod
     def upload_image(local_path, filename):
-        """이미지를 Firebase Storage에 업로드하고 다운로드 URL을 반환"""
-        # 업로드 URL (POST 방식)
         url = f"https://firebasestorage.googleapis.com/v0/b/{FB_STORAGE_BUCKET}/o?name=images%2F{filename}"
         try:
             with open(local_path, 'rb') as f:
                 image_data = f.read()
             
             headers = {"Content-Type": "image/jpeg"}
-            res = requests.post(url, data=image_data, headers=headers)
+            res = requests.post(url, data=image_data, headers=headers, timeout=20)
             
             if res.status_code == 200:
                 data = res.json()
                 download_token = data.get('downloadTokens')
-                # 다운로드 URL 생성
                 public_url = f"https://firebasestorage.googleapis.com/v0/b/{FB_STORAGE_BUCKET}/o/images%2F{filename}?alt=media&token={download_token}"
                 return public_url
             else:
-                print(f"이미지 업로드 실패: {res.text}")
                 return ""
         except Exception as e:
-            print(f"이미지 업로드 오류: {e}")
             return ""
+        
+
 def get_rounded_textinput(hint_text, password=False, input_type='text'):
     return TextInput(
         hint_text=hint_text,
@@ -875,7 +896,6 @@ class ClaimManagementScreen(WhiteBgScreen):
             item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
             item_box.bind(minimum_height=item_box.setter('height')) 
 
-            # ▼▼▼ [수정 핵심] self.bg_rect -> bg_rect (지역 변수)로 변경 ▼▼▼
             with item_box.canvas.before:
                 Color(0.95, 0.95, 0.95, 1)
                 bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
@@ -885,7 +905,6 @@ class ClaimManagementScreen(WhiteBgScreen):
                 pos=lambda instance, value, r=bg_rect: setattr(r, 'pos', value),
                 size=lambda instance, value, r=bg_rect: setattr(r, 'size', value)
             )
-            # ▲▲▲ [수정 완료] ▲▲▲
 
             item_box.add_widget(create_wrapping_label(
                 text_content=f"[b]{item.get('name', '이름 없음')}[/b]", 
@@ -1056,40 +1075,40 @@ class SignupScreen(WhiteBgScreen):
             self.show_popup("오류", "비밀번호는 6자 이상이어야 합니다.")
             return
 
-        # 아이디 중복 확인 (REST API 사용)
-        existing_email = FirebaseREST.db_get(f"id_to_email_mapping/{login_id}")
-        if existing_email:
-            self.show_popup("오류", "이미 사용 중인 아이디입니다.")
-            return
-
-        # 1. 회원가입 요청
-        result = FirebaseREST.signup(email, password)
-        if "error" in result:
-            error_msg = result["error"].get("message", "")
-            if "EMAIL_EXISTS" in error_msg:
-                self.show_popup("오류", "이미 사용 중인 이메일입니다.")
-            else:
-                self.show_popup("오류", f"회원가입 실패: {error_msg}")
-            return
-
-        uid = result['localId']
-        id_token = result['idToken']
-
-        # 2. 이메일 인증 전송
-        FirebaseREST.send_email_verification(id_token)
-
-        # 3. DB 저장
-        user_profile_data = {
-            'login_id': login_id, 'nickname': nickname, 'email': email, 'role': 'user',
-            'student_id': student_id, 'name': name, 'department': department, 'grade': grade
-        }
-        
         try:
-            # 사용자 프로필 저장
-            FirebaseREST.db_put(f"users/{uid}", user_profile_data, id_token)
-            # 아이디 매핑 저장
-            FirebaseREST.db_put(f"id_to_email_mapping/{login_id}", email, id_token)
+            existing_email = FirebaseREST.db_get(f"id_to_email_mapping/{login_id}")
+            if isinstance(existing_email, dict) and "error" in existing_email:
+                 self.show_popup("오류", "네트워크 상태를 확인해주세요.")
+                 return
+            if existing_email:
+                self.show_popup("오류", "이미 사용 중인 아이디입니다.")
+                return
+
+            result = FirebaseREST.signup(email, password)
+            if "error" in result:
+                error_msg = result["error"].get("message", "")
+                if "EMAIL_EXISTS" in error_msg:
+                    self.show_popup("오류", "이미 사용 중인 이메일입니다.")
+                else:
+                    self.show_popup("오류", f"회원가입 실패: {error_msg}")
+                return
+
+            uid = result.get('localId')
+            id_token = result.get('idToken')
+
+            if not uid or not id_token:
+                 self.show_popup("오류", "가입 처리 중 문제가 발생했습니다.")
+                 return
+
+            FirebaseREST.send_email_verification(id_token)
+
+            user_profile_data = {
+                'login_id': login_id, 'nickname': nickname, 'email': email, 'role': 'user',
+                'student_id': student_id, 'name': name, 'department': department, 'grade': grade
+            }
             
+            FirebaseREST.db_put(f"users/{uid}", user_profile_data, id_token)
+            FirebaseREST.db_put(f"id_to_email_mapping/{login_id}", email, id_token)
             self.show_popup("성공", f"회원가입 신청이 완료되었습니다.\n\n'{email}'로 발송된\n인증 링크를 클릭하여 계정을 활성화해주세요.", after_dismiss_callback=self.go_to_login)
         except Exception as e:
             self.show_popup("오류", f"데이터 저장 실패: {e}")
@@ -1103,11 +1122,25 @@ class SignupScreen(WhiteBgScreen):
             self.rect_popup_bg.pos = instance.pos
             self.rect_popup_bg.size = instance.size
         content_layout.bind(pos=update_popup_rect, size=update_popup_rect)
-        popup_content = Label(text=message, font_size='18sp', font_name=FONT_NAME, color=[0, 0, 0, 1])
+
+        # 텍스트 줄바꿈 및 높이 자동 조절 설정
+        popup_content = Label(
+            text=message, 
+            font_size='18sp', 
+            font_name=FONT_NAME, 
+            color=[0, 0, 0, 1],
+            halign='center', # 가로 정렬 중앙
+            valign='middle'  # 세로 정렬 중앙
+        )
+        # Label 너비에 맞춰 텍스트 크기 설정 (줄바꿈 핵심)
+        popup_content.bind(width=lambda *x: popup_content.setter('text_size')(popup_content, (popup_content.width, None)))
+        
         content_layout.add_widget(popup_content)
+
         confirm_button = get_styled_button("확인", [0.2, 0.6, 1, 1], [1, 1, 1, 1], font_size='20sp')
         confirm_button.height = dp(50)
         popup = Popup(title=title, title_font=FONT_NAME, title_color=[0, 0, 0, 1], content=content_layout, size_hint=(0.8, 0.4), auto_dismiss=False, separator_height=0, background='')
+        
         def on_confirm(btn_instance):
             popup.dismiss()
             if after_dismiss_callback:
@@ -1170,13 +1203,11 @@ class LoginScreen(WhiteBgScreen):
             return
 
         try:
-            # 1. 아이디로 이메일 찾기
             email = FirebaseREST.db_get(f"id_to_email_mapping/{username}")
             if not email:
                 self.show_popup("로그인 실패", "존재하지 않는 아이디입니다.", show_retry_button=True)
                 return
 
-            # 2. 로그인 시도
             result = FirebaseREST.login(email, password)
             if "error" in result:
                 error_msg = result["error"].get("message", "")
@@ -1186,10 +1217,13 @@ class LoginScreen(WhiteBgScreen):
                     self.show_popup("로그인 실패", f"오류: {error_msg}", show_retry_button=True)
                 return
 
-            id_token = result['idToken']
-            uid = result['localId']
+            id_token = result.get('idToken')
+            uid = result.get('localId')
 
-            # 3. 이메일 인증 확인
+            if not id_token or not uid:
+                self.show_popup("로그인 실패", "인증 정보를 받아오지 못했습니다.", show_retry_button=True)
+                return
+
             user_info_res = FirebaseREST.get_user_info(id_token)
             users_list = user_info_res.get('users', [])
             if not users_list or not users_list[0].get('emailVerified', False):
@@ -1199,7 +1233,6 @@ class LoginScreen(WhiteBgScreen):
             app.user_token = id_token
             app.current_user_uid = uid
 
-            # 4. 프로필 정보 가져오기
             user_profile = FirebaseREST.db_get(f"users/{uid}", id_token)
             if user_profile:
                 app.current_user_nickname = user_profile.get('nickname', '사용자')
@@ -1216,27 +1249,19 @@ class LoginScreen(WhiteBgScreen):
             self.show_popup("로그인 실패", f"시스템 오류: {e}", show_retry_button=True)
 
 
-# --------------------------------------------------------
-# 동아리 기능 관련 화면들
-# --------------------------------------------------------
 class ClubScreen(WhiteBgScreen):
-    """동아리 목록을 보여주는 메인 화면"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
         back_button.height = dp(50)
         back_button.size_hint_x = None
         back_button.width = dp(60)
         back_button.bind(on_press=lambda *args: self.go_to_screen('main'))
         header.add_widget(back_button)
-
         header.add_widget(Label(text="[b]동아리 게시판[/b]", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, font_size='26sp'))
-
         create_button = get_styled_button("개설 신청", [0.3, 0.7, 0.4, 1], [1, 1, 1, 1], font_size='18sp')
         create_button.height = dp(50)
         create_button.size_hint_x = None
@@ -1251,7 +1276,6 @@ class ClubScreen(WhiteBgScreen):
         search_button.size_hint_x = 0.2
         search_button.height = dp(50)
         search_button.bind(on_press=self.search_clubs)
-
         search_layout.add_widget(self.search_input)
         search_layout.add_widget(search_button)
         main_layout.add_widget(search_layout)
@@ -1259,17 +1283,13 @@ class ClubScreen(WhiteBgScreen):
         scroll_view = ScrollView(size_hint=(1, 1))
         self.results_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
         self.results_grid.bind(minimum_height=self.results_grid.setter('height'))
-
         scroll_view.add_widget(self.results_grid)
         main_layout.add_widget(scroll_view)
-
         self.add_widget(main_layout)
-
         self.bind(on_enter=self.refresh_list)
 
     def refresh_list(self, *args):
         app = App.get_running_app()
-        
         if not app.user_token:
             self.update_club_list([]) 
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
@@ -1278,18 +1298,15 @@ class ClubScreen(WhiteBgScreen):
         try:
             clubs_dict = FirebaseREST.db_get("all_clubs", app.user_token)
             
-            if clubs_dict:
+            if clubs_dict and isinstance(clubs_dict, dict) and "error" not in clubs_dict:
                 clubs_list = list(clubs_dict.values())
-                
-                # 인기도 점수(popularity_score) 기준 내림차순 정렬 (점수 없으면 0점)
                 sorted_list = sorted(
                     clubs_list, 
-                    key=lambda club: club.get("popularity_score", 0), 
+                    key=lambda club: club.get("popularity_score", 0) if isinstance(club, dict) else 0, 
                     reverse=True
                 )
-                
                 self.update_club_list(sorted_list)
-                app.all_clubs = sorted_list # 로컬 변수에도 정렬된 리스트 저장 (검색용)
+                app.all_clubs = sorted_list
             else:
                 self.update_club_list([])
                 app.all_clubs = []
@@ -1306,35 +1323,26 @@ class ClubScreen(WhiteBgScreen):
             self.results_grid.add_widget(Label(text="표시할 동아리가 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
         else:
             for club in clubs:
-                item = ClubListItem(
-                    orientation='vertical',
-                    padding=dp(15),
-                    spacing=dp(5),
-                    size_hint_y=None,
-                    height=dp(80)
-                )
+                if not isinstance(club, dict): continue
 
+                item = ClubListItem(orientation='vertical', padding=dp(15), spacing=dp(5), size_hint_y=None, height=dp(80))
                 item.club_data = club
                 item.bind(on_press=self.view_club_details)
 
-                name_label = Label(text=f"[b]{club['name']}[/b]", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(30))
+                name_label = Label(text=f"[b]{club.get('name', '이름 없음')}[/b]", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(30))
                 
-                # (선택) 점수가 0점보다 크면 점수도 같이 표시해주면 확인하기 좋습니다.
                 score = club.get('popularity_score', 0)
-                desc_text = club['short_desc']
-                if score > 0:
-                    desc_text += f" (인기도: {score})"
+                desc_text = club.get('short_desc', '')
+                if score > 0: desc_text += f" (인기도: {score})"
 
                 desc_label = Label(text=desc_text, font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], halign='left', valign='middle', size_hint_y=None, height=dp(20))
 
                 for label in [name_label, desc_label]:
                     label.bind(size=label.setter('text_size'))
                     item.add_widget(label)
-
                 self.results_grid.add_widget(item)
 
     def view_club_details(self, instance):
-        """ 동아리 상세 정보 화면으로 이동 """
         detail_screen = self.manager.get_screen('club_detail')
         detail_screen.club_data = instance.club_data 
         self.go_to_screen('club_detail')
@@ -1342,29 +1350,22 @@ class ClubScreen(WhiteBgScreen):
     def search_clubs(self, instance):
         app = App.get_running_app()
         search_term = self.search_input.text.lower()
-        
-        # 검색 시에도 app.all_clubs(이미 정렬됨)에서 필터링하거나 다시 정렬
         try:
-            if not app.all_clubs: # 로컬에 없으면 DB 조회
+            if not app.all_clubs:
                  clubs_dict = FirebaseREST.db_get("all_clubs", app.user_token)
-                 if clubs_dict: app.all_clubs = list(clubs_dict.values())
+                 if clubs_dict and isinstance(clubs_dict, dict) and "error" not in clubs_dict: 
+                     app.all_clubs = list(clubs_dict.values())
             
             if app.all_clubs:
                 if not search_term:
                     results = app.all_clubs
                 else:
-                    results = [club for club in app.all_clubs if search_term in club['name'].lower()]
+                    results = [club for club in app.all_clubs if isinstance(club, dict) and search_term in club.get('name', '').lower()]
                 
-                # 검색 결과도 다시 한번 정렬 (안전을 위해)
-                sorted_results = sorted(
-                    results, 
-                    key=lambda club: club.get("popularity_score", 0), 
-                    reverse=True
-                )
+                sorted_results = sorted(results, key=lambda club: club.get("popularity_score", 0), reverse=True)
                 self.update_club_list(sorted_results)
             else:
                 self.update_club_list([])
-                
         except Exception:
             pass
 
@@ -2184,12 +2185,16 @@ class LostAndFoundScreen(WhiteBgScreen):
         app = App.get_running_app()
         keyword = self.search_input.text.lower()
         category = self.category_spinner.text
-        base_list = [item for item in app.all_items if item.get('status') == 'lost' or item.get('status') == 'found_available']
+        if not app.all_items:
+             base_list = []
+        else:
+             base_list = [item for item in app.all_items if isinstance(item, dict) and (item.get('status') == 'lost' or item.get('status') == 'found_available')]
+        
         filtered_list = base_list
         if category != '전체':
             filtered_list = [item for item in filtered_list if item.get('category') == category]
         if keyword:
-            filtered_list = [item for item in filtered_list if keyword in item['name'].lower() or keyword in item.get('desc', '').lower() or keyword in item.get('loc', '').lower()]
+            filtered_list = [item for item in filtered_list if keyword in item.get('name', '').lower() or keyword in item.get('desc', '').lower() or keyword in item.get('loc', '').lower()]
         self.update_item_list(filtered_list)
 
     def register_keyword(self, instance):
@@ -2205,7 +2210,7 @@ class LostAndFoundScreen(WhiteBgScreen):
         if app.user_token:
             try:
                 items_dict = FirebaseREST.db_get("all_items", app.user_token)
-                if items_dict:
+                if items_dict and isinstance(items_dict, dict) and "error" not in items_dict:
                     app.all_items = list(items_dict.values())
                 else:
                     app.all_items = []
@@ -2221,15 +2226,17 @@ class LostAndFoundScreen(WhiteBgScreen):
             self.items_grid.add_widget(Label(text="표시할 분실물이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
         else:
             for item_data in items:
+                if not isinstance(item_data, dict): continue
+
                 item_layout = LostItemListItem(orientation='horizontal', size_hint_y=None, height=dp(120), spacing=dp(10), padding=dp(5))
                 item_layout.item_data = item_data
                 item_layout.bind(on_press=self.view_item_details)
                 image = AsyncImage(source=item_data.get('image') if item_data.get('image') else DEFAULT_IMAGE, size_hint_x=None, width=dp(90), fit_mode='contain')
                 item_layout.add_widget(image)
                 text_layout = BoxLayout(orientation='vertical', spacing=dp(5))
-                status_text = "[b][color=1010A0]습득[/color][/b]" if item_data['status'] == 'found_available' else "[b][color=A01010]분실[/color][/b]"
-                name_label = Label(text=f"{status_text} {item_data['name']}", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(25))
-                loc_label = Label(text=f"[b]장소:[/b] {item_data['loc']}", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(20))
+                status_text = "[b][color=1010A0]습득[/color][/b]" if item_data.get('status') == 'found_available' else "[b][color=A01010]분실[/color][/b]"
+                name_label = Label(text=f"{status_text} {item_data.get('name', '')}", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(25))
+                loc_label = Label(text=f"[b]장소:[/b] {item_data.get('loc', '')}", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(20))
                 time_label = Label(text=f"[b]시간:[/b] {item_data.get('time', 'N/A')}", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(20))
                 text_layout.add_widget(name_label)
                 text_layout.add_widget(loc_label)
@@ -2243,6 +2250,8 @@ class LostAndFoundScreen(WhiteBgScreen):
         detail_screen = self.manager.get_screen('item_detail')
         detail_screen.item_data = instance.item_data
         self.go_to_screen('item_detail')
+
+
 
 class AddItemScreen(WhiteBgScreen):
     is_lost = ObjectProperty(False)
@@ -2413,19 +2422,13 @@ class AddItemScreen(WhiteBgScreen):
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
             return
 
-        # 사진 업로드 처리
         image_url = ""
         if self.image_path:
             try:
-                # 파일 확장자
                 ext = os.path.splitext(self.image_path)[1]
                 if not ext: ext = ".jpg"
-                
-                cloud_filename = f"{item_id}{ext}" # 파일명
-                
-                # REST 방식으로 업로드 호출
+                cloud_filename = f"{item_id}{ext}" 
                 image_url = FirebaseREST.upload_image(self.image_path, cloud_filename)
-                
             except Exception as e:
                 print(f"이미지 업로드 실패: {e}")
 
@@ -2452,13 +2455,17 @@ class AddItemScreen(WhiteBgScreen):
         }
         
         try:
-            FirebaseREST.db_put(f"pending_items/{item_id}", new_item, app.user_token)
+            result = FirebaseREST.db_put(f"pending_items/{item_id}", new_item, app.user_token)
+            if isinstance(result, dict) and "error" in result:
+                raise Exception(result["error"])
+
             popup = Popup(title='알림', content=Label(text='등록 신청이 완료되었습니다.\n관리자 승인 후 게시됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
             popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
             popup.open()
             
         except Exception as e:
             Popup(title='DB 오류', content=Label(text=f'데이터 저장 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+
 
 class ItemDetailScreen(WhiteBgScreen):
     item_data = ObjectProperty(None)
@@ -2692,13 +2699,11 @@ class MyClaimsScreen(WhiteBgScreen):
             with item_box.canvas.before:
                 Color(0.95, 0.95, 0.95, 1)
                 bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
-            
-            # ▼▼▼ [수정] 람다 인자 v -> value로 수정 ▼▼▼
+        
             item_box.bind(
                 pos=lambda instance, value, r=bg_rect: setattr(r, 'pos', value),
                 size=lambda instance, value, r=bg_rect: setattr(r, 'size', value)
             )
-            # ▲▲▲ [수정] ▲▲▲
 
             item_box.add_widget(self.create_wrapping_label(text_content=f"[b]물품명: {item_name}[/b]", color=[0,0,0,1]))
             item_box.add_widget(Label(size_hint_y=None, height=dp(5)))
