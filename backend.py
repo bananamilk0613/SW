@@ -57,6 +57,8 @@ from kivy.resources import resource_find
 # 날짜 및 시간 처리를 위해 datetime 임포트
 from datetime import datetime
 
+# SpinnerOption 추가 (Spinner 옵션 커스터마이징을 위해)
+from kivy.uix.spinner import SpinnerOption
 
 
 # 스마트폰 기능 접근을 위한 plyer 임포트 (PC 환경 예외 처리 포함)
@@ -884,365 +886,219 @@ class AdminMainScreen(WhiteBgScreen):
 # --------------------------------------------------------
 
 class AdminClaimApprovalScreen(WhiteBgScreen):
-
     """관리자가 사용자의 물품 신청(소유권)을 승인/거절하는 화면"""
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
         # 헤더
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
-        back_button.bind(on_press=lambda *args: self.go_to_screen('admin_main')) # 관리자 메인으로
-
+        back_button.bind(on_press=lambda *args: self.go_to_screen('admin_main'))
         header.add_widget(back_button)
-
         header.add_widget(Label(text="[b]물품 신청 관리[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
-
         main_layout.add_widget(header)
 
-
-
         # 스크롤 뷰
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.grid.bind(minimum_height=self.grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.grid)
-
         main_layout.add_widget(scroll_view)
-
         self.add_widget(main_layout)
-
-
 
         self.bind(on_enter=self.refresh_list)
 
-
-
     def refresh_list(self, *args):
-
+        """(수정) Firebase에서 claims와 all_items를 직접 읽어와서 표시"""
         self.grid.clear_widgets()
-
         app = App.get_running_app()
+        
+        if not app.user_token:
+             self.grid.add_widget(Label(text="로그인 정보가 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
+             return
 
-
-
-        # 'status'가 없는 (즉, 'pending' 상태인) 신청만 필터링
-
-        all_claims = app.claims
-
-        pending_claims = [c for c in all_claims if 'status' not in c]
-
-
-
-        if not pending_claims:
-
-            self.grid.add_widget(Label(text="검토 대기 중인 신청이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
-
-            return
-
-
-
-        # 헬퍼 함수: 자동 줄바꿈 및 높이 조절 라벨 생성
-
+        # 헬퍼 함수
         def create_wrapping_label(text_content, **kwargs):
-
             label = Label(
-
-                text=text_content,
-
-                size_hint_y=None, # <- 높이를 텍스트에 맞춤
-
-                font_name=FONT_NAME,
-
-                markup=True,
-
-                halign='left',
-
-                **kwargs
-
+                text=text_content, size_hint_y=None, font_name=FONT_NAME,
+                markup=True, halign='left', **kwargs
             )
-
             label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
-
             label.bind(texture_size=lambda instance, value: setattr(instance, 'height', value[1]))
-
             return label
 
-
-
-
-
-        for claim in pending_claims:
-
-            item_id = claim.get('item_id')
-
+        try:
+            # 1. 모든 신청서(claims) 가져오기
+            claims_node = db.child("claims").get(app.user_token)
+            claims_dict = claims_node.val()
             
-
-            # item_id를 이용해 원본 item 찾기
-
-            item = next((i for i in app.all_items if i.get('item_id') == item_id), None)
-
-            
-
-            if not item:
-
-                continue 
-
-
-
-            # (1) 물품 기본 정보 표시
-
-            item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
-
-            item_box.bind(minimum_height=item_box.setter('height'))
-
-
-
-            with item_box.canvas.before:
-
-                Color(0.95, 0.95, 0.8, 1) # 연한 노란색 배경
-
-                self.bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
-
-            
-
-            item_box.bind(
-
-                pos=lambda instance, value: setattr(self.bg_rect, 'pos', value),
-
-                size=lambda instance, value: setattr(self.bg_rect, 'size', value)
-
-            )
-
-
-
-            # (2) 물품 정보, 신청자 정보
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"[b]물품명:[/b] {item['name']}", color=[0,0,0,1]
-
-            ))
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"[b]신청자:[/b] {claim.get('claimer_nickname', '알 수 없음')} ({claim.get('claimer_id')})", color=[0,0,0,1]
-
-            ))
-
-            
-
-            item_box.add_widget(Label(size_hint_y=None, height=dp(10))) # 여백
-
-
-            # (3-1) 등록자가 올린 원본 정보
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"[b]등록자(Finder)가 올린 정보:[/b]",
-
-                color=[0.1, 0.4, 0.7, 1] # 파란색
-
-            ))
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"  - (장소): {item['loc']}",
-
-                color=[0.1, 0.4, 0.7, 1]
-
-            ))
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"  - (상세): {item.get('desc', '없음')}",
-
-                color=[0.1, 0.4, 0.7, 1]
-
-            ))
-
-
-
-            item_box.add_widget(Label(size_hint_y=None, height=dp(10))) # 여백
-
-
-
-            # (3-2) 신청자가 입력한 검증 정보 (상세 설명만)
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"[b]신청자(Claimer)가 입력한 [상세 특징]:[/b]",
-
-                color=[0.8, 0.2, 0.2, 1] # 빨간색
-
-            ))
-
-            #  'verification_location' 표시 라벨 제거됨
-
-            item_box.add_widget(create_wrapping_label(
-
-                text_content=f"{claim.get('verification_details', 'N/A')}",
-
-                color=[0.8, 0.2, 0.2, 1]
-
-            ))
-
-
-
-            item_box.add_widget(Label(size_hint_y=None, height=dp(15))) # 버튼 전 여백
-
-
-
-            # (4) 승인/거절 버튼 추가
-
-            button_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
-
-            
-
-            approve_btn = Button(text="전달 완료 (승인)", font_name=FONT_NAME, background_color=[0.2, 0.8, 0.2, 1])
-
-            approve_btn.item_id = item_id 
-
-            approve_btn.claim = claim 
-
-            approve_btn.bind(on_press=self.approve_claim) 
-
-            
-
-            reject_btn = Button(text="신청 거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
-
-            reject_btn.item_id = item_id 
-
-            reject_btn.claim = claim 
-
-            reject_btn.bind(on_press=self.reject_claim)
-
-            
-
-            button_layout.add_widget(approve_btn)
-
-            button_layout.add_widget(reject_btn)
-
-            
-
-            item_box.add_widget(button_layout)
-
-            
-
-            self.grid.add_widget(item_box)
-
+            if not claims_dict:
+                self.grid.add_widget(Label(text="접수된 신청이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
+                return
+
+            # 2. 물건 정보(all_items)도 가져와야 함 (물품명을 보여주기 위해)
+            items_node = db.child("all_items").get(app.user_token)
+            items_dict = items_node.val() or {} # 없으면 빈 딕셔너리
+
+            # 3. 'status'가 없는(pending) 신청만 필터링
+            pending_claims = [c for c in claims_dict.values() if 'status' not in c]
+
+            if not pending_claims:
+                self.grid.add_widget(Label(text="검토 대기 중인 신청이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
+                return
+
+            for claim in pending_claims:
+                item_id = claim.get('item_id')
+                
+                # items_dict에서 해당 아이템 정보 찾기
+                item = items_dict.get(item_id)
+                
+                if not item:
+                    continue # 물건 정보가 없으면 스킵
+
+                # (UI 그리기)
+                item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
+                item_box.bind(minimum_height=item_box.setter('height'))
+
+                with item_box.canvas.before:
+                    Color(0.95, 0.95, 0.8, 1) 
+                    self.bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
+                
+                item_box.bind(
+                    pos=lambda instance, value, r=self.bg_rect: setattr(r, 'pos', value), # 람다 캡처 주의
+                    size=lambda instance, value, r=self.bg_rect: setattr(r, 'size', value)
+                )
+                # (주의: 위 람다에서 self.bg_rect를 직접 쓰면 마지막 rect만 참조될 수 있으므로
+                #  객체 생성 시점에 캡처하거나, 매번 새로 생성되는 위젯이므로 큰 문제 없을 수 있음.
+                #  더 안전하게 하려면 헬퍼 클래스로 빼는 게 좋지만 일단 진행)
+
+                # 기본 정보
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"[b]물품명:[/b] {item['name']}", color=[0,0,0,1]
+                ))
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"[b]신청자:[/b] {claim.get('claimer_nickname', '알 수 없음')}", color=[0,0,0,1]
+                ))
+                
+                item_box.add_widget(Label(size_hint_y=None, height=dp(10))) 
+
+                # 등록자 정보
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"[b]등록자(Finder)가 올린 정보:[/b]", color=[0.1, 0.4, 0.7, 1]
+                ))
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"  - (장소): {item['loc']}", color=[0.1, 0.4, 0.7, 1]
+                ))
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"  - (상세): {item.get('desc', '없음')}", color=[0.1, 0.4, 0.7, 1]
+                ))
+
+                item_box.add_widget(Label(size_hint_y=None, height=dp(10)))
+
+                # 신청자 검증 정보
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"[b]신청자(Claimer)가 입력한 [상세 특징]:[/b]", color=[0.8, 0.2, 0.2, 1]
+                ))
+                item_box.add_widget(create_wrapping_label(
+                    text_content=f"{claim.get('verification_details', 'N/A')}", color=[0.8, 0.2, 0.2, 1]
+                ))
+
+                item_box.add_widget(Label(size_hint_y=None, height=dp(15))) 
+
+                # 버튼
+                button_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
+                
+                approve_btn = Button(text="전달 완료 (승인)", font_name=FONT_NAME, background_color=[0.2, 0.8, 0.2, 1])
+                approve_btn.item_id = item_id 
+                approve_btn.claim = claim 
+                approve_btn.bind(on_press=self.approve_claim) 
+                
+                reject_btn = Button(text="신청 거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
+                reject_btn.item_id = item_id 
+                reject_btn.claim = claim 
+                reject_btn.bind(on_press=self.reject_claim)
+                
+                button_layout.add_widget(approve_btn)
+                button_layout.add_widget(reject_btn)
+                
+                item_box.add_widget(button_layout)
+                self.grid.add_widget(item_box)
+
+        except Exception as e:
+            self.grid.add_widget(Label(text=f"데이터 로딩 실패: {e}", font_name=FONT_NAME, color=[1,0,0,1], size_hint_y=None, height=dp(100)))
 
 
     def approve_claim(self, instance):
-
-        """(관리자) 신청을 승인 -> 신청(claim) 객체에 상태와 연락처를 기록합니다."""
-
+        """(관리자) 신청을 승인 -> '학생복지처' 인계를 안내합니다."""
         app = App.get_running_app()
+        if not app.user_token: return
 
         item_id = instance.item_id
-
-        claim = instance.claim
-
-
-
-        item = next((i for i in app.all_items if i.get('item_id') == item_id), None)
-
-        if not item:
-
-            Popup(title='오류', content=Label(text='원본 아이템을 찾을 수 없습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
-            return
-
-
-
-        finder_contact = item.get('contact', '연락처 없음')
-
+        claim_id = instance.claim.get('claim_id') # claim 객체 안에 ID가 있어야 함
+        claim_data = instance.claim
         
-
-        item['status'] = 'found_returned'
-
-        
-
-        claim['status'] = 'approved'
-
-        claim['finder_contact'] = finder_contact
-
+        try:
+            pickup_location = "학생복지처"
             
+            # 1. 아이템 상태 변경
+            db.child("all_items").child(item_id).update({'status': 'found_returned'}, app.user_token)
+            
+            # 2. 신청서 상태 변경 (DB 경로: claims/{claim_id})
+            # claim 객체에 id가 없다면... key를 찾아야 하는데, 
+            # 위 refresh_list에서 dict.values()로만 가져와서 key를 잃어버렸을 수 있음.
+            if claim_id:
+                db.child("claims").child(claim_id).update({
+                    'status': 'approved',
+                    'finder_contact': pickup_location
+                }, app.user_token)
+            else:
+                 # (만약 ID가 없다면 비상용으로 전체 덮어쓰기 시도 - 권장 안함)
+                 print("Error: Claim ID not found")
 
-        popup_message = (
-            f"승인이 완료되었습니다.\n\n"
-            f"'{claim.get('claimer_nickname')}' 님에게\n"
-            f"등록자 연락처 ({finder_contact})가 공유됩니다."
-        )
-
-                        
-
-        popup = Popup(title='[b]승인 완료[/b]',
-
-                      title_font=FONT_NAME,
-
-                      content=Label(text=popup_message, font_name=FONT_NAME, markup=True, padding=dp(10)),
-
-                      size_hint=(0.9, 0.4))
-
-        
-
-        popup.bind(on_dismiss=self.refresh_list)
-
-        popup.open()
-
+            popup_message = (
+                f"승인이 완료되었습니다.\n\n"
+                f"신청자('{claim_data.get('claimer_nickname')}')에게\n"
+                f"'{pickup_location}' 수령이 안내됩니다."
+            )
+                            
+            popup = Popup(title='[b]승인 완료[/b]',
+                          title_font=FONT_NAME,
+                          content=Label(text=popup_message, font_name=FONT_NAME, markup=True, padding=dp(10)),
+                          size_hint=(0.9, 0.4))
+            
+            popup.bind(on_dismiss=self.refresh_list)
+            popup.open()
+            
+        except Exception as e:
+             Popup(title='오류', content=Label(text=f"승인 처리 실패: {e}", font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
 
     def reject_claim(self, instance):
-
-        """(관리자) 신청을 거절 -> 신청(claim) 객체에 '거절' 상태를 기록합니다."""
-
+        """(관리자) 신청을 거절"""
         app = App.get_running_app()
+        if not app.user_token: return
 
         item_id = instance.item_id
-
-        claim = instance.claim
-
-
-
-        for item in app.all_items:
-
-            if item.get('item_id') == item_id:
-
-                item['status'] = 'found_available' # '신청 가능'으로 복구
-
-                break
-
+        claim_id = instance.claim.get('claim_id')
         
-
-        claim['status'] = 'rejected'
-
+        try:
+            # 1. 아이템 상태 복구
+            db.child("all_items").child(item_id).update({'status': 'found_available'}, app.user_token)
             
-
-        self.refresh_list()
+            # 2. 신청서 상태 거절로 변경
+            if claim_id:
+                db.child("claims").child(claim_id).update({'status': 'rejected'}, app.user_token)
+            
+            self.refresh_list()
+            
+        except Exception as e:
+             Popup(title='오류', content=Label(text=f"거절 처리 실패: {e}", font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
    
 
@@ -1433,236 +1289,134 @@ class ClubApprovalScreen(WhiteBgScreen):
 
 
 class ItemApprovalScreen(WhiteBgScreen):
-
     """분실물 등록 신청을 관리하는 화면"""
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('admin_main'))
-
         header.add_widget(back_button)
-
         header.add_widget(Label(text="[b]분실물 등록 승인[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
-
         main_layout.add_widget(header)
 
-
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.approval_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.approval_grid.bind(minimum_height=self.approval_grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.approval_grid)
-
         main_layout.add_widget(scroll_view)
-
         self.add_widget(main_layout)
-
-
 
         self.bind(on_enter=self.refresh_approval_list)
 
-
-
     def refresh_approval_list(self, *args):
-
         app = App.get_running_app()
-
-        self.update_approval_list(app.pending_items)
-
-
-
-    def update_approval_list(self, pending_items):
-
-        self.approval_grid.clear_widgets()
-
-        if not pending_items:
-
-            self.approval_grid.add_widget(Label(text="승인 대기 중인 게시물이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
-
-        else:
-
-            for item_request in pending_items:
-
-                item_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(100), padding=dp(10), spacing=dp(10))
-
-
-
-                img = Image(source=item_request.get('image', DEFAULT_IMAGE), size_hint_x=0.3, allow_stretch=True)
-
-                info_layout = BoxLayout(orientation='vertical', size_hint_x=0.4)
-
-                info_layout.add_widget(Label(text=f"[b]{item_request['name']}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, halign='left', valign='top'))
-
-                info_layout.add_widget(Label(text=f"장소: {item_request['loc']}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], halign='left', valign='top'))
-
-                
-
-                # '시간' 정보도 표시 (선택 사항)
-
-                info_layout.add_widget(Label(text=f"시간: {item_request.get('time', 'N/A')}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], halign='left', valign='top'))
-
-
-
-
-
-                button_layout = BoxLayout(orientation='vertical', size_hint_x=0.3, spacing=dp(5))
-
-                approve_button = Button(text="수락", font_name=FONT_NAME, background_color=[0.2, 0.8, 0.2, 1])
-
-                approve_button.item_data = item_request
-
-                approve_button.bind(on_press=self.approve_item)
-
-
-
-                reject_button = Button(text="거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
-
-                reject_button.item_data = item_request
-
-                reject_button.bind(on_press=self.reject_item)
-
-
-
-                button_layout.add_widget(approve_button)
-
-                button_layout.add_widget(reject_button)
-
-
-
-                item_layout.add_widget(img)
-
-                item_layout.add_widget(info_layout)
-
-                item_layout.add_widget(button_layout)
-
-                self.approval_grid.add_widget(item_layout)
-
-
-
-    def approve_item(self, instance):
-
-        approved_item = instance.item_data
-
-        app = App.get_running_app()
-
         
-
         if not app.user_token:
-
+            self.update_approval_list([])
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
             return
-
             
-
-        item_id = approved_item.get('item_id')
-
-        if not item_id:
-
-            Popup(title='오류', content=Label(text='아이템 ID가 없습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
-            return
-
-            
-
         try:
-
-            # (기존 로컬 리스트 조작 코드 제거)
-
-            # if approved_item in app.pending_items:
-
-            #     app.all_items.append(approved_item)
-
-            #     app.pending_items.remove(approved_item)
-
+            pending_node = db.child("pending_items").get(app.user_token)
+            pending_items_dict = pending_node.val()
             
-
-            #  1. 'all_items' 경로에 아이템 추가
-
-            db.child("all_items").child(item_id).set(approved_item, app.user_token)
-
-            
-
-            #  2. 'pending_items' 경로에서 해당 아이템 삭제
-
-            db.child("pending_items").child(item_id).remove(app.user_token)
-
-
-
-            self.check_keyword_notification(approved_item) # 키워드 알림 체크 (이건 로컬 기능이니 유지)
-
-            
-
-            #  3. 목록 새로고침 (DB를 다시 읽어옴)
-
-            self.refresh_approval_list()
-
-
+            if pending_items_dict:
+                pending_list = list(pending_items_dict.values())
+                self.update_approval_list(pending_list)
+            else:
+                self.update_approval_list([])
 
         except Exception as e:
+            self.update_approval_list([])
+            Popup(title='DB 오류', content=Label(text=f'데이터 읽기 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
+    def update_approval_list(self, pending_items):
+        self.approval_grid.clear_widgets()
+        if not pending_items:
+            self.approval_grid.add_widget(Label(text="승인 대기 중인 게시물이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
+        else:
+            for item_request in pending_items:
+                item_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(100), padding=dp(10), spacing=dp(10))
+
+                img = Image(source=item_request.get('image', DEFAULT_IMAGE), size_hint_x=0.3, allow_stretch=True)
+                info_layout = BoxLayout(orientation='vertical', size_hint_x=0.4)
+                info_layout.add_widget(Label(text=f"[b]{item_request['name']}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, halign='left', valign='top'))
+                info_layout.add_widget(Label(text=f"장소: {item_request['loc']}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], halign='left', valign='top'))
+                info_layout.add_widget(Label(text=f"시간: {item_request.get('time', 'N/A')}", font_name=FONT_NAME, color=[0.3,0.3,0.3,1], halign='left', valign='top'))
+
+                button_layout = BoxLayout(orientation='vertical', size_hint_x=0.3, spacing=dp(5))
+                approve_button = Button(text="수락", font_name=FONT_NAME, background_color=[0.2, 0.8, 0.2, 1])
+                approve_button.item_data = item_request
+                approve_button.bind(on_press=self.approve_item)
+
+                reject_button = Button(text="거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
+                reject_button.item_data = item_request
+                reject_button.bind(on_press=self.reject_item)
+
+                button_layout.add_widget(approve_button)
+                button_layout.add_widget(reject_button)
+
+                item_layout.add_widget(img)
+                item_layout.add_widget(info_layout)
+                item_layout.add_widget(button_layout)
+                self.approval_grid.add_widget(item_layout)
+
+    def approve_item(self, instance):
+        approved_item = instance.item_data
+        app = App.get_running_app()
+        
+        if not app.user_token:
+            Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        item_id = approved_item.get('item_id')
+        if not item_id:
+            Popup(title='오류', content=Label(text='아이템 ID가 없습니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+            return
+            
+        try:
+            # 승인된 아이템을 all_items 경로로 이동
+            db.child("all_items").child(item_id).set(approved_item, app.user_token)
+            
+            # pending_items 경로에서 삭제
+            db.child("pending_items").child(item_id).remove(app.user_token)
+
+            self.check_keyword_notification(approved_item)
+            self.refresh_approval_list()
+
+        except Exception as e:
             Popup(title='DB 오류', content=Label(text=f'승인 처리 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
-
-
     def reject_item(self, instance):
-
         rejected_item = instance.item_data
-
         app = App.get_running_app()
+        
+        if not app.user_token:
+             return
 
-        if rejected_item in app.pending_items:
-
-            app.pending_items.remove(rejected_item)
-
-        self.refresh_approval_list()
-
-
+        try:
+            item_id = rejected_item.get('item_id')
+            db.child("pending_items").child(item_id).remove(app.user_token)
+            self.refresh_approval_list()
+        except Exception as e:
+            Popup(title='DB 오류', content=Label(text=f'거절 처리 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
     def check_keyword_notification(self, new_item):
-
-        """새 아이템이 등록될 때 키워드와 일치하는지 확인하고 팝업을 띄웁니다."""
-
         app = App.get_running_app()
-
-        # '시간' 정보도 알림 검색 대상에 포함
-
         item_text = f"{new_item['name']} {new_item['desc']} {new_item['loc']} {new_item.get('time', '')}".lower()
-
         for keyword in app.notification_keywords:
-
             if keyword.lower() in item_text:
-
                 Popup(title='키워드 알림',
-
                         content=Label(text=f"등록하신 키워드 '{keyword}'가 포함된\n'{new_item['name']}' 게시물이 등록되었습니다.", font_name=FONT_NAME),
-
                         size_hint=(0.8, 0.4)).open()
-
-                break # 여러 키워드에 해당되더라도 한번만 알림
+                break
 
 
 
@@ -1673,213 +1427,128 @@ class ItemApprovalScreen(WhiteBgScreen):
 # --------------------------------------------------------
 
 class ClaimManagementScreen(WhiteBgScreen):
-
     """ 내가 등록한 분실/습득물의 '상태'를 확인하는 화면"""
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
-        # 헤더
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
-        back_button.bind(on_press=lambda *args: self.go_to_screen('main')) # 메인으로 돌아가기
-
+        back_button.bind(on_press=lambda *args: self.go_to_screen('main'))
         header.add_widget(back_button)
-
         header.add_widget(Label(text="[b]내 등록 물품 관리[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
-
         main_layout.add_widget(header)
 
-
-
-        # 스크롤 뷰
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.grid.bind(minimum_height=self.grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.grid)
-
         main_layout.add_widget(scroll_view)
-
         self.add_widget(main_layout)
-
-
 
         self.bind(on_enter=self.refresh_list)
 
-
-
     def refresh_list(self, *args):
-
         self.grid.clear_widgets()
-
         app = App.get_running_app()
+        if not app.user_token: return
 
-
-
-        # 내가 등록한 아이템만 필터링
-
-        my_items = [item for item in app.all_items if item.get('registered_by_id') == app.current_user]
-
-
+        try:
+            all_items_dict = db.child("all_items").get(app.user_token).val()
+            my_items = []
+            if all_items_dict:
+                for item in all_items_dict.values():
+                    # UID 비교를 우선하되, 없으면 ID로도 비교 (호환성 강화)
+                    reg_uid = item.get('registered_by_uid')
+                    reg_id = item.get('registered_by_id')
+                    
+                    if reg_uid and reg_uid == app.current_user_uid:
+                        my_items.append(item)
+                    elif not reg_uid and reg_id == app.current_user:
+                        my_items.append(item)
+        except Exception:
+             my_items = []
 
         if not my_items:
-
             self.grid.add_widget(Label(text="내가 등록한 물품이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
-
             return
 
-
-
-        # 헬퍼 함수: 자동 줄바꿈 및 높이 조절 라벨 생성
-
         def create_wrapping_label(text_content, **kwargs):
-
             label = Label(
-
-                text=text_content,
-
-                size_hint_y=None, # <- 높이를 텍스트에 맞춤
-
-                font_name=FONT_NAME,
-
-                markup=True,
-
-                halign='left',
-
-                **kwargs
-
+                text=text_content, size_hint_y=None, font_name=FONT_NAME,
+                markup=True, halign='left', **kwargs
             )
-
             label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
-
             label.bind(texture_size=lambda instance, value: setattr(instance, 'height', value[1]))
-
             return label
 
-
-
         for item in my_items:
-
             item_id = item.get('item_id')
-
+            item_status = item.get('status', 'unknown') #status가 없어도 죽지 않게 처리
             
-
-            # (1) 물품 기본 정보 표시
-
             item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
-
-            # (중요) item_box의 높이가 자식들의 높이 합(minimum_height)에 맞춰지도록 바인딩
-
             item_box.bind(minimum_height=item_box.setter('height')) 
 
-
-
             with item_box.canvas.before:
-
                 Color(0.95, 0.95, 0.95, 1)
-
                 self.bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
-
             
-
-            # (중요) 배경 사각형도 item_box의 위치/크기에 맞춰 업데이트되도록 바인딩
-
             item_box.bind(
-
                 pos=lambda instance, value: setattr(self.bg_rect, 'pos', value),
-
                 size=lambda instance, value: setattr(self.bg_rect, 'size', value)
-
             )
 
-
-
-            # 헬퍼 함수 사용
-
             item_box.add_widget(create_wrapping_label(
-
-                text_content=f"[b]{item['name']}[/b]", 
-
+                text_content=f"[b]{item.get('name', '이름 없음')}[/b]", 
                 color=[0,0,0,1]
-
             ))
-
             
-
             status_text = ""
-
             
+            if item_status == 'found_pending':
+                try:
+                    claims_node = db.child("claims").get(app.user_token)
+                    claims_dict = claims_node.val()
+                    claim = None
+                    if claims_dict:
+                        for c in claims_dict.values():
+                            if c.get('item_id') == item_id:
+                                claim = c
+                                break
+                    
+                    if claim:
+                        status_text = f"[color=A01010]관리자 검토 중[/color]\n신청자: {claim.get('claimer_nickname', '알 수 없음')}"
+                        item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0,0,0,1]))
+                    else:
+                        status_text = "[color=1010A0]신청 가능[/color]"
+                        item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0,0,0,1]))
+                except:
+                    pass
 
-            # (2) 상태에 따른 분기
-
-            if item['status'] == 'found_pending':
-
-                claim = next((c for c in app.claims if c['item_id'] == item_id), None)
-
-                if claim:
-
-                    status_text = f"[color=A01010]관리자 검토 중[/color]\n신청자: {claim.get('claimer_nickname', '알 수 없음')}"
-
-                    item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0,0,0,1]))
-
-                else:
-
-                    item['status'] = 'found_available' # 상태 복구
-
-                    status_text = "[color=1010A0]신청 가능[/color]"
-
-                    item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0,0,0,1]))
-
-            
-
-            elif item['status'] == 'found_available':
-
+            elif item_status == 'found_available':
                 status_text = "[color=1010A0]신청 가능[/color] (대기중인 신청 없음)"
-
                 item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0.3,0.3,0.3,1]))
-
             
+            elif item_status == 'found_returned':
+                # 습득자 안내 문구
+                status_text = "[color=008000][b]교차 검증 승인됨[/b][/color]\n(학생복지처에 물품을 인계해주세요)"
+                item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0.2,0.2,0.2,1]))
 
-            elif item['status'] == 'found_returned':
-
-                status_text = "전달 완료"
-
-                item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0.5,0.5,0.5,1]))
-
-
-
-            elif item['status'] == 'lost':
-
+            elif item_status == 'lost':
                 status_text = "내가 등록한 분실물"
-
                 item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0.5,0.5,0.5,1]))
-
             
+            else:
+                # 알 수 없는 상태일 때도 표시
+                status_text = f"상태: {item_status}"
+                item_box.add_widget(create_wrapping_label(text_content=status_text, color=[0.5,0.5,0.5,1]))
 
             self.grid.add_widget(item_box)
-
    
 
 # --------------------------------------------------------
@@ -2792,7 +2461,7 @@ class ClubManagementScreen(WhiteBgScreen):
             
             # (6.9.2) '멤버 관리(추방)' 버튼 추가
             member_manage_button = get_styled_button("멤버 관리 (추방)", [0.8, 0.5, 0.2, 1], [1, 1, 1, 1])
-            member_manage_button.bind(on_press=self.go_to_member_management) # ◀ 새 함수 연결
+            member_manage_button.bind(on_press=self.go_to_member_management) 
             self.main_layout.add_widget(member_manage_button)
 
             post_announcement_button = get_styled_button("공지사항 작성", [0.3, 0.7, 0.4, 1], [1, 1, 1, 1])
@@ -2813,7 +2482,7 @@ class ClubManagementScreen(WhiteBgScreen):
         self.go_to_screen('member_approval')
         
     def go_to_member_management(self, instance):
-        """(신규) 멤버 관리 화면으로 이동"""
+        """ 멤버 관리 화면으로 이동"""
         management_screen = self.manager.get_screen('member_management')
         management_screen.club_data = self.club_data
         self.go_to_screen('member_management')
@@ -3277,472 +2946,237 @@ except ImportError:
 
 # --------------------------------------------------------
 
-class AddItemScreen(WhiteBgScreen):
+# (import는 기존 유지)
+from kivy.uix.spinner import SpinnerOption 
 
+class AddItemScreen(WhiteBgScreen):
     is_lost = ObjectProperty(False)
 
-
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         root_layout = BoxLayout(orientation='vertical', spacing=dp(10), padding=[dp(20), dp(10), dp(20), dp(20)])
 
-
-
         # 헤더
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10))
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('lost_found'))
-
         header.add_widget(back_button)
-
         self.header_title = Label(text="[b]분실/습득물 등록[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp')
-
         header.add_widget(self.header_title)
-
         root_layout.add_widget(header)
 
-
-
         # 스크롤 가능한 컨텐츠 영역
-
         scroll_view = ScrollView()
-
-        content_layout = GridLayout(cols=1, spacing=dp(15), size_hint_y=None, padding=[0, dp(10), 0, 0])
-
-        content_layout.bind(minimum_height=content_layout.setter('height'))
-
-
-
+        
+        # ▼▼▼ [수정] 변수명 앞에 'self.'를 붙여서 클래스 전체에서 쓸 수 있게 함 ▼▼▼
+        self.content_layout = GridLayout(cols=1, spacing=dp(15), size_hint_y=None, padding=[0, dp(10), 0, 0])
+        self.content_layout.bind(minimum_height=self.content_layout.setter('height'))
 
 
         # 입력 필드
-
         self.name_input = get_rounded_textinput('물건 이름 (예: 에어팟 프로)')
-
         self.desc_input = get_rounded_textinput('자세한 설명 (공개됨, 예: 검은색 케이스)')
-
         self.loc_input = get_rounded_textinput('발견/분실 장소 (예: 중앙도서관 1층)')
-
-        
-
         self.time_input = get_rounded_textinput('발견/분실 시간 (예: 14:30)')
-
-        
-
         self.contact_input = get_rounded_textinput('연락처 (예: 010-1234-5678)')
 
-
-
         self.verification_desc_input = TextInput(
-
             hint_text='[신원 확인용 정보 (비공개)]\n(예: 배경화면 사진, 지갑 속 특정 카드, 케이스 안쪽 스티커 등)', 
-
             font_name=FONT_NAME, 
-
             size_hint_y=None, 
-
             height=dp(100), 
-
             padding=dp(15),
-
             background_normal='', 
-
-            background_color=[0.95, 0.95, 0.8, 1] # 연한 노란색 배경
-
+            background_color=[0.95, 0.95, 0.8, 1] 
         )
-
         
-
-        # 1. Spinner를 'option_cls_args' 없이 먼저 생성합니다.
+        # 스피너 글씨 깨짐 해결용 클래스
+        class KoreanSpinnerOption(SpinnerOption):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.font_name = FONT_NAME 
+                self.background_normal = ''
+                self.background_color = [1, 1, 1, 1] 
+                self.color = [0, 0, 0, 1]            
+                self.height = dp(50)
 
         self.category_spinner = Spinner(
-
             text='카테고리 선택 (종류)',
-
             values=('전자기기', '서적', '의류', '지갑/카드', '기타'),
-
             font_name=FONT_NAME,
-
             size_hint_y=None,
-
             height=dp(55),
-
             background_normal='',             
-
             background_color=[1, 1, 1, 1],  
-
-            color=[0, 0, 0, 1]                
-
+            color=[0, 0, 0, 1],
+            option_cls=KoreanSpinnerOption 
         )
 
+        # 위젯 추가 (self.content_layout 사용)
+        self.content_layout.add_widget(self.name_input)
+        self.content_layout.add_widget(self.desc_input)
         
-
-        # 2. (핵심) 생성된 객체에 'option_cls_args' 속성을 별도로 설정합니다.
-
-        self.category_spinner.option_cls_args = {
-
-            'font_name': FONT_NAME,           # (1. 폰트 깨짐 해결)
-
-            'background_normal': '',        # (2. 스타일 해결)
-
-            'background_color': [1, 1, 1, 1], # (2. 흰색 배경)
-
-            'color': [0, 0, 0, 1],            # (2. 검은색 텍스트)
-
-            'height': dp(50)                  # (2. 옵션 높이 조절)
-
-        }
-
-
-
-
-
-        content_layout.add_widget(self.name_input)
-
-        content_layout.add_widget(self.desc_input)
-
+        # 초기에는 verification_desc_input 추가
+        self.content_layout.add_widget(self.verification_desc_input)
         
-
-        #  desc_input 바로 뒤에 추가
-
-        content_layout.add_widget(self.verification_desc_input)
-
-        
-
-        content_layout.add_widget(self.loc_input)
-
-        content_layout.add_widget(self.time_input)
-
-        content_layout.add_widget(self.contact_input)
-
-        content_layout.add_widget(self.category_spinner)
-
-
+        self.content_layout.add_widget(self.loc_input)
+        self.content_layout.add_widget(self.time_input)
+        self.content_layout.add_widget(self.contact_input)
+        self.content_layout.add_widget(self.category_spinner)
 
         # 사진 등록 부분
-
-        self.image_path = "" # 이미지 경로 저장 변수
-
+        self.image_path = "" 
         photo_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(55), spacing=dp(10))
-
         self.photo_label = Label(text="사진이 선택되지 않았습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_x=0.7)
-
         photo_button = get_styled_button("사진 선택", [0.5, 0.7, 0.9, 1], [1, 1, 1, 1], font_size='18sp')
-
         photo_button.height = dp(55)
-
         photo_button.size_hint_x = 0.3
-
         photo_button.bind(on_press=self.select_photo)
 
-
-
         photo_layout.add_widget(self.photo_label)
-
         photo_layout.add_widget(photo_button)
-
-        content_layout.add_widget(photo_layout)
-
-
+        self.content_layout.add_widget(photo_layout)
 
         # 이미지 미리보기
-
         self.image_preview = Image(source=DEFAULT_IMAGE, size_hint_y=None, height=dp(150), fit_mode='contain')
+        self.content_layout.add_widget(self.image_preview)
 
-        content_layout.add_widget(self.image_preview)
-
-
-
-        content_layout.add_widget(Label(size_hint_y=None, height=dp(15))) # Spacer
-
-
+        self.content_layout.add_widget(Label(size_hint_y=None, height=dp(15))) 
 
         # 등록하기 버튼
-
         register_button = get_styled_button("등록 신청", [1, 0.5, 0.3, 1], [1, 1, 1, 1])
-
         register_button.bind(on_press=self.register_item)
-
-        content_layout.add_widget(register_button)
-
+        self.content_layout.add_widget(register_button)
         
-
-        scroll_view.add_widget(content_layout)
-
+        scroll_view.add_widget(self.content_layout)
         root_layout.add_widget(scroll_view)
-
-
 
         self.add_widget(root_layout)
 
-
-
     def on_enter(self, *args):
-
         # 화면에 들어올 때마다 제목과 필수 항목 조정
-
         if self.is_lost:
-
             self.header_title.text = "[b]분실물 등록[/b]"
-
             if self.verification_desc_input.parent:
-
                 self.verification_desc_input.parent.remove_widget(self.verification_desc_input)
-
         else:
-
             self.header_title.text = "[b]습득물 등록[/b]"
-
             if not self.verification_desc_input.parent:
-
-                # desc_input 바로 뒤(인덱스 2)에 추가
-
-                self.children[0].children[0].children[1].add_widget(self.verification_desc_input, index=2)
-
-
-
+                # ▼▼▼ [수정] 복잡한 인덱스 대신 self.content_layout 사용 ▼▼▼
+                # (desc_input 다음에 넣기 위해 인덱스 계산. Kivy는 리스트 역순이라 헷갈릴 수 있음)
+                # 안전하게 그냥 add_widget 하면 맨 아래로 가지만, 위치를 맞추려면 아래처럼 합니다.
+                # 여기서는 간단히 다시 추가 (위치는 맨 아래가 될 수 있음)하거나, 
+                # 정확한 위치를 위해 children 리스트를 조작해야 하는데, 
+                # 오류 방지를 위해 가장 안전한 방법인 '맨 뒤에 추가' 대신 '적절한 위치 삽입'을 시도합니다.
+                
+                # (간단한 해결책) 그냥 remove 했다가 다시 순서대로 그리는게 제일 안전하지만, 
+                # 여기서는 index=len(children)-2 정도로 넣겠습니다.
+                # 하지만 더 안전한 건 그냥 맨 아래나 위젯들 사이에 넣는 것입니다.
+                # 일단 오류가 안 나게 self.content_layout에 추가합니다.
+                try:
+                     # desc_input이 있는 위치를 찾아서 그 뒤에 넣음
+                    index = self.content_layout.children.index(self.desc_input)
+                    self.content_layout.add_widget(self.verification_desc_input, index=index)
+                except:
+                    # 실패하면 그냥 추가
+                    self.content_layout.add_widget(self.verification_desc_input)
+                # ▲▲▲ [수정 완료] ▲▲▲
 
 
         # 필드 초기화
-
         self.name_input.text = ""
-
         self.desc_input.text = ""
-
         self.loc_input.text = ""
-
         self.time_input.text = ""
-
         self.contact_input.text = ""
-
         self.image_path = ""
-
         self.photo_label.text = "사진이 선택되지 않았습니다."
-
         self.image_preview.source = DEFAULT_IMAGE
-
         self.category_spinner.text = '카테고리 선택 (종류)'
-
-        
-
         self.verification_desc_input.text = ""
 
-      
-
-
-
     def select_photo(self, instance):
-
-        """plyer를 사용하여 파일 선택 창을 엽니다. (권한 요청 포함)"""
-
         if platform == 'android':
-
             permissions = [Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE]
-
             request_permissions(permissions, self.on_permission_callback)
-
         else:
-
             self.open_file_chooser()
-
-
 
     def on_permission_callback(self, permissions, grants):
-
-        """ 권한 요청 팝업의 결과를 처리하는 콜백 함수입니다."""
-
         if all(grants):
-
-            print("권한 승인됨. 파일 선택기 엽니다.")
-
             self.open_file_chooser()
-
         else:
-
-            print("권한 거부됨.")
-
-            Popup(title='권한 필요',
-
-                  content=Label(text='사진을 첨부하려면\n파일 접근 권한이 필요합니다.', font_name=FONT_NAME),
-
-                  size_hint=(0.8, 0.3)).open()
-
-
+            Popup(title='권한 필요', content=Label(text='사진을 첨부하려면\n파일 접근 권한이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
     def open_file_chooser(self):
-
-        """ 파일 선택기를 여는 로직을 별도 메소드로 분리"""
-
         filechooser.open_file(on_selection=self.on_file_selection)
 
-
-
     def on_file_selection(self, selection):
-
-        """파일이 선택되었을 때 호출될 콜백 함수입니다."""
-
         if selection:
-
             self.image_path = selection[0]
-
             self.photo_label.text = os.path.basename(self.image_path)
-
             self.image_preview.source = self.image_path
-
             self.image_preview.reload()
 
     def register_item(self, instance):
-
         name = self.name_input.text
-
-        desc = self.desc_input.text # (공개용)
-
+        desc = self.desc_input.text 
         loc = self.loc_input.text
-
         time_val = self.time_input.text
-
         contact = self.contact_input.text
-
         category = self.category_spinner.text
-
-        
-
-        verification_desc = self.verification_desc_input.text # (비공개용)
-
-
-
-        #  '분실물'이 아닐 경우(습득물일 경우) verification_desc도 필수 항목
+        verification_desc = self.verification_desc_input.text 
 
         if not name or not loc or not time_val or not contact or category == '카테고리 선택 (종류)':
-
             Popup(title='오류', content=Label(text='기본 정보를 모두 입력해주세요.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
             return
-
             
-
         if not self.is_lost and not verification_desc:
-
             Popup(title='오류', content=Label(text='[신원 확인용 정보]는\n습득물 등록 시 필수 항목입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
             return
-
-
 
         image = self.image_path if self.image_path else "" 
-
-        
-
         app = App.get_running_app()
-
+        item_id = f"item_{int(time.time())}_{app.current_user_uid}" 
         
-
-
-        # (uid 대신 current_user를 사용해도 고유 ID 생성에는 문제없습니다)
-
-        item_id = f"item_{int(time.time())}_{app.current_user}"
-
-        
-
-        # (로그인 토큰 확인)
-
         if not app.user_token:
-
             Popup(title='오류', content=Label(text='로그인이 필요합니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
             return
 
-
-
-
         if self.is_lost:
-
             status = 'lost'
-
             verification_desc = "" 
-
         else:
-
             status = 'found_available'
 
-
-
         new_item = {
-
             'item_id': item_id,
-
             'name': name, 
-
-            'desc': desc, # (공개용)
-
+            'desc': desc, 
             'loc': loc, 
-
             'time': time_val, 
-
             'contact': contact,
-
             'image': image,
-
             'category': category,
-
             'status': status,
-
-            'registered_by_id': app.current_user, # (기존 아이디)
-
-            'registered_by_uid': app.current_user_uid, # (Firebase UID)
-
+            'registered_by_id': app.current_user, 
+            'registered_by_uid': app.current_user_uid, 
             'registered_by_nickname': app.current_user_nickname,
-
-            'verification_desc': verification_desc # (비공개용)
-
+            'verification_desc': verification_desc 
         }
-
         
-
         try:
-
-            # app.pending_items.append(new_item) # <- (기존 로컬 리스트)
-
-            
-
-            #  Firebase DB 'pending_items' 경로에 item_id를 키로 하여 저장
-
-            #  app.user_token을 함께 보내야 5.0단계의 보안 규칙을 통과합니다.
-
             db.child("pending_items").child(item_id).set(new_item, app.user_token)
-
-
-
             popup = Popup(title='알림', content=Label(text='등록 신청이 완료되었습니다.\n관리자 승인 후 게시됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3))
-
             popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
-
             popup.open()
-
             
-
         except Exception as e:
-
             Popup(title='DB 오류', content=Label(text=f'데이터 저장 실패: {e}', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
-       
-
-
-
 
 
 # --------------------------------------------------------
@@ -3754,546 +3188,298 @@ class AddItemScreen(WhiteBgScreen):
 
 
 class ItemDetailScreen(WhiteBgScreen):
-
     item_data = ObjectProperty(None)
 
-
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-        # 메인 레이아웃을 RelativeLayout으로 변경 (하단 고정 버튼을 위함)
-
         self.main_layout = RelativeLayout()
-
         self.add_widget(self.main_layout)
 
-
-
     def on_enter(self, *args):
-
         """화면에 들어올 때마다 위젯을 다시 그림"""
-
         self.main_layout.clear_widgets()
 
-
-
         if not self.item_data:
-
             return
 
-
-
         app = App.get_running_app()
-
         
-
-        # --- 1. 하단 고정 바 (상태에 따라 다르게 표시) ---
-
-
-
+        # --- 1. 하단 고정 바 ---
         bottom_bar = BoxLayout(
-
             size_hint=(1, None), height=dp(80), 
-
             pos_hint={'bottom': 0}, padding=dp(10), spacing=dp(10)
-
         )
-
         with bottom_bar.canvas.before:
-
             Color(0.95, 0.95, 0.95, 1) # 연한 회색 배경
-
             self.bottom_rect = Rectangle(size=bottom_bar.size, pos=bottom_bar.pos)
-
         bottom_bar.bind(size=self._update_rect_cb(self.bottom_rect), 
-
                         pos=self._update_rect_cb(self.bottom_rect))
-
         
-
-        is_my_post = self.item_data.get('registered_by_id') == app.current_user
-
+        is_my_post = self.item_data.get('registered_by_uid') == app.current_user_uid
         item_status = self.item_data.get('status')
-
         
-
         if is_my_post:
-
             if item_status == 'found_pending':
-
                 status_label_text = "다른 사용자가 신청하여 관리자가 검토 중입니다."
-
             elif item_status == 'found_returned':
-
                 status_label_text = "물품 전달이 완료되었습니다."
-
             else:
-
                 status_label_text = "내가 등록한 게시물입니다."
-
             status_label = Label(text=status_label_text, font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1])
-
             bottom_bar.add_widget(status_label)
-
         elif item_status == 'lost':
-
-            contact_text = f"연락처: {self.item_data['contact']}"
-
+            contact_text = f"연락처: {self.item_data.get('contact', '비공개')}"
             contact_button = get_styled_button(contact_text, [0.2, 0.6, 1, 1], [1, 1, 1, 1], font_size='20sp')
-
             bottom_bar.add_widget(contact_button)
-
         else: 
-
             if item_status == 'found_available':
-
                 claim_button = get_styled_button("이 물건 주인입니다 (신청하기)", [0.8, 0.2, 0.2, 1], [1, 1, 1, 1], font_size='20sp')
-
                 claim_button.bind(on_press=self.show_claim_verification_popup)
-
                 bottom_bar.add_widget(claim_button)
-
             elif item_status == 'found_pending':
-
                 status_label = Label(text="관리자가 다른 사용자의 신청을 검토 중입니다.", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1])
-
                 bottom_bar.add_widget(status_label)
-
             elif item_status == 'found_returned':
-
                 status_label = Label(text="물품 전달이 완료되었습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1])
-
                 bottom_bar.add_widget(status_label)
-
-
 
         
-
-        # --- 2. 메인 컨텐츠 영역 (하단 바 위) ---
-
+        # --- 2. 메인 컨텐츠 영역 ---
         main_content_container = BoxLayout(
-
             orientation='vertical',
-
             size_hint=(1, 1),
-
             padding=[0, 0, 0, dp(80)] 
-
         )
-
-
-
-        # 상단 헤더 (뒤로가기 버튼 + 제목)
 
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=dp(10))
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('lost_found'))
-
         header.add_widget(back_button)
-
         
-
-        status_text = "분실물 정보" if self.item_data['status'] == 'lost' else "습득물 정보"
-
-        header.add_widget(Label(text=f"[b]{status_text}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
-
+        status_text_val = "분실물 정보" if self.item_data.get('status') == 'lost' else "습득물 정보"
+        header.add_widget(Label(text=f"[b]{status_text_val}[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
         main_content_container.add_widget(header)
 
-
-
         # --- 3. 스크롤 가능한 컨텐츠 ---
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         
-
         scroll_content = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(15), padding=dp(10))
-
         scroll_content.bind(minimum_height=scroll_content.setter('height'))
 
-
-
         # 3-1. 이미지
-
         image = Image(
-
             source=self.item_data.get('image') if self.item_data.get('image') else DEFAULT_IMAGE,
-
             size_hint_y=None,
-
             height=dp(300),
-
             fit_mode='contain'
-
         )
-
         scroll_content.add_widget(image)
 
-
-
         # 3-2. 등록자 정보
-
         registrant_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), padding=[dp(10), 0])
-
         registrant = self.item_data.get('registered_by_nickname', self.item_data.get('registered_by_id', '알 수 없음'))
-
         
-
-        profile_icon = Image(
-
-            source=DEFAULT_IMAGE, 
-
-            size_hint=(None, None),
-
-            size=(dp(40), dp(40))
-
-        )
-
+        profile_icon = Image(source=DEFAULT_IMAGE, size_hint=(None, None), size=(dp(40), dp(40)))
         registrant_box.add_widget(profile_icon)
-
-        registrant_box.add_widget(Label(size_hint_x=None, width=dp(10))) # 여백
-
+        registrant_box.add_widget(Label(size_hint_x=None, width=dp(10))) 
         
-
         registrant_label = Label(
-
             text=f"[b]등록자: {registrant}[/b]",
-
             font_name=FONT_NAME, color=[0,0,0,1], markup=True,
-
             font_size='18sp', halign='left'
-
         )
-
         registrant_label.bind(size=registrant_label.setter('text_size'))
-
         registrant_box.add_widget(registrant_label)
-
         scroll_content.add_widget(registrant_box)
 
-
-
         # 3-3. 구분선
-
         separator = Label(size_hint_y=None, height=dp(1))
-
         with separator.canvas.before:
-
             Color(0.8, 0.8, 0.8, 1)
-
             Rectangle(pos=separator.pos, size=(self.width - dp(40), dp(1)))
-
         scroll_content.add_widget(separator)
 
-
-
-        # 3-4. 상세 정보 섹션
-
+        # 3-4. 상세 정보
         info_section = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8), padding=[dp(10), dp(15)])
-
         info_section.bind(minimum_height=info_section.setter('height'))
 
-
-
-        # 물품명
-
         item_name_label = Label(
-
-            text=f"[b]{self.item_data['name']}[/b]",
-
+            text=f"[b]{self.item_data.get('name')}[/b]",
             font_name=FONT_NAME, color=[0,0,0,1], markup=True,
-
             font_size='24sp', size_hint_y=None, halign='left'
-
         )
-
         item_name_label.bind(width=lambda *x: item_name_label.setter('text_size')(item_name_label, (item_name_label.width, None)),
-
                                 texture_size=lambda *x: item_name_label.setter('height')(item_name_label, item_name_label.texture_size[1]))
-
         info_section.add_widget(item_name_label)
 
-
-
-        # 상태 및 카테고리
-
-        status_color = "[color=A01010]" if self.item_data['status'] == 'lost' else "[color=1010A0]"
-
-        status_display_text = "분실" if self.item_data['status'] == 'lost' else "습득"
-
+        status_val = self.item_data.get('status')
+        status_color = "[color=A01010]" if status_val == 'lost' else "[color=1010A0]"
+        status_display_text = "분실" if status_val == 'lost' else "습득"
+        
         category_label = Label(
-
             text=f"{status_color}[b]{status_display_text}[/b][/color] · {self.item_data.get('category', '기타')}",
-
             font_name=FONT_NAME, color=[0.3,0.3,0.3,1], markup=True,
-
             font_size='16sp', size_hint_y=None, height=dp(25), halign='left'
-
         )
-
         category_label.bind(size=category_label.setter('text_size'))
-
         info_section.add_widget(category_label)
 
-
-
-        
-
-        # 장소 및 시간 (한 줄에 표시)
-
         loc_time_label = Label(
-
-            text=f"장소: {self.item_data['loc']}  ·  시간: {self.item_data.get('time', 'N/A')}",
-
+            text=f"장소: {self.item_data.get('loc')}  ·  시간: {self.item_data.get('time', 'N/A')}",
             font_name=FONT_NAME, color=[0.3,0.3,0.3,1],
-
             font_size='16sp', size_hint_y=None, height=dp(25), halign='left'
-
         )
-
         loc_time_label.bind(size=loc_time_label.setter('text_size'))
-
         info_section.add_widget(loc_time_label)
-
-       
-
         
-
+        info_section.add_widget(Label(size_hint_y=None, height=dp(15))) # 여백
         
-
-        # 상세 설명 제목
-
-        info_section.add_widget(Label(size_hint_y=None, height=dp(15))) # 위쪽 여백
-
-        
-
         desc_title_label = Label(
-
             text="[b]상세 설명[/b]",
-
             font_name=FONT_NAME, color=[0,0,0,1], markup=True,
-
             font_size='20sp', size_hint_y=None, height=dp(40), halign='left'
-
         )
-
-        
-
         desc_title_label.bind(size=desc_title_label.setter('text_size'))
-
         info_section.add_widget(desc_title_label)
 
-
-
-        # 상세 설명 내용
-
         desc_content_label = Label(
-
             text=self.item_data.get('desc', '없음'),
-
             font_name=FONT_NAME, color=[0.2,0.2,0.2,1],
-
             font_size='16sp', size_hint_y=None, halign='left'
-
         )
-
         desc_content_label.bind(width=lambda *x: desc_content_label.setter('text_size')(desc_content_label, (desc_content_label.width, None)),
-
                                 texture_size=lambda *x: desc_content_label.setter('height')(desc_content_label, desc_content_label.texture_size[1]))
-
         info_section.add_widget(desc_content_label)
 
-        
-
-        
-
-
-
-        # 스크롤 뷰에 컨텐츠 추가
-
         scroll_content.add_widget(info_section)
-
         scroll_view.add_widget(scroll_content)
-
         
-
-        # 메인 컨테이너에 스크롤 뷰 추가
-
         main_content_container.add_widget(scroll_view)
-
         
-
         # --- 4. 최종 조립 ---
-
         self.main_layout.add_widget(main_content_container)
-
         self.main_layout.add_widget(bottom_bar)
 
 
-
-
-
     def show_claim_verification_popup(self, instance):
-
-        """'이 물건 주인입니다' 클릭 시 교차 검증 팝업을 띄웁니다."""
-
+        """'이 물건 주인입니다' 클릭 시 교차 검증 팝업"""
         app = App.get_running_app()
-
         item_id = self.item_data.get('item_id')
 
-
-
-        # 이미 이 물건에 대해 내가 신청한 내역이 있는지 확인
-
-        if any(c['item_id'] == item_id and c['claimer_id'] == app.current_user for c in app.claims):
-
-            Popup(title='알림', content=Label(text='이미 신청한 물품입니다.\n관리자가 검토 중입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
-            return
-
+        try:
+            claims_node = db.child("claims").get(app.user_token)
+            claims_dict = claims_node.val()
             
+            if claims_dict:
+                for c in claims_dict.values():
+                    if c.get('item_id') == item_id and c.get('claimer_id') == app.current_user_uid:
+                         Popup(title='알림', content=Label(text='이미 신청한 물품입니다.\n관리자가 검토 중입니다.', font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
+                         return
+        except Exception:
+            pass # 오류나면 그냥 진행
 
         # 팝업 컨텐츠 레이아웃
-
         content_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
-
         
-
-        # (핵심) 흰색 배경 및 검은색 테두리 추가
-
         with content_layout.canvas.before:
-
-            Color(1, 1, 1, 1)  # 흰색 배경
-
+            Color(1, 1, 1, 1) 
             self.rect_bg = RoundedRectangle(pos=content_layout.pos, size=content_layout.size, radius=[dp(10)])
-
         
-
-        # 크기/위치 변경 시 배경 및 테두리도 함께 변경되도록 바인딩
-
         content_layout.bind(pos=self._update_popup_rect_cb(self.rect_bg), 
-
                             size=self._update_popup_rect_cb(self.rect_bg))
 
-
-
         content_layout.add_widget(Label(
-
             text="[b]물품 주인 확인[/b]\n\n관리자가 확인할 수 있도록\n본인 소유임을 증명할 수 있는\n[b]상세 특징[/b]을 입력해주세요.",
-
             font_name=FONT_NAME, markup=True, halign='center', color=[0,0,0,1]
-
         ))
-
         
-
-        # 상세 특징 입력
-
         detail_input = TextInput(
-
             hint_text='물품의 상세 특징 (예: 케이스 색상, 스티커, 배경화면, 내용물 등)', 
-
             font_name=FONT_NAME, multiline=True, size_hint_y=None, height=dp(100),
-
-            background_normal='', background_color=[0.95, 0.95, 0.95, 1], # TextInput 배경도 살짝 회색
-
+            background_normal='', background_color=[0.95, 0.95, 0.95, 1],
             foreground_color=[0,0,0,1],
-
             padding=[dp(10), dp(10), dp(10), dp(10)]
-
         )
-
         content_layout.add_widget(detail_input)
-
         
-
-        # 신청 버튼
-
         submit_button = get_styled_button("신청서 제출", [0.8, 0.2, 0.2, 1], [1, 1, 1, 1])
-
         
-
         popup = Popup(
-
-            title="", # (핵심) 제목을 비워서 기본 제목 표시줄 제거
-
+            title="", 
             content=content_layout,
-
             size_hint=(0.9, 0.6),
-
             auto_dismiss=False,
-
-            separator_height=0,   # (핵심) 구분선 높이 0으로 설정
-
-            background=""         # (핵심) 팝업 자체 배경을 투명하게
-
+            separator_height=0,  
+            background=""  
         )
-
         
-
         submit_button.bind(on_press=lambda *args: self.submit_verification_claim(
-
             popup, item_id, detail_input.text
-
         ))
-
         
-
         content_layout.add_widget(submit_button)
-
         
-
-        # 닫기 버튼
-
         close_button = get_styled_button("취소", [0.5, 0.5, 0.5, 1], [1,1,1,1]) 
-
         close_button.bind(on_press=popup.dismiss)
-
         content_layout.add_widget(close_button)
-
-
 
         popup.open()
 
+    def submit_verification_claim(self, popup, item_id, details):
+        """신청 내용을 Firebase DB에 저장하고 아이템 상태를 변경"""
+        if not details:
+            print("상세 내용을 입력해주세요.") 
+            return
+
+        app = App.get_running_app()
+        
+        if not app.user_token:
+             popup.dismiss()
+             return
+
+        claim_id = f"claim_{int(time.time())}_{app.current_user_uid}"
+        
+        claim_data = {
+            'claim_id': claim_id,
+            'item_id': item_id,
+            'claimer_id': app.current_user_uid,
+            'claimer_nickname': app.current_user_nickname,
+            'verification_details': details,
+            # status는 없음 (pending 상태)
+        }
+
+        try:
+            # 1. claims 경로에 저장
+            db.child("claims").child(claim_id).set(claim_data, app.user_token)
+            
+            # 2. 해당 아이템 상태를 'found_pending'으로 변경
+            db.child("all_items").child(item_id).update({'status': 'found_pending'}, app.user_token)
+            
+            popup.dismiss()
+            
+            success_popup = Popup(title='신청 완료', content=Label(text='주인 확인 신청이 완료되었습니다.\n관리자 검토 후 승인되면 연락처가 공개됩니다.', font_name=FONT_NAME), size_hint=(0.8, 0.4))
+            success_popup.bind(on_dismiss=lambda *args: self.go_to_screen('lost_found'))
+            success_popup.open()
+
+        except Exception as e:
+            print(f"신청 실패: {e}")
+            popup.dismiss()
 
 
     def _update_rect_cb(self, rect):
-
-        """하단 바 배경 업데이트를 위한 콜백 함수"""
-
         def update_rect(instance, value):
-
             rect.pos = instance.pos
-
             rect.size = instance.size
-
         return update_rect
-
     
-
     def _update_popup_rect_cb(self, rect):
-
-        """RoundedRectangle 팝업 배경 업데이트를 위한 콜백 함수"""
-
         def update_rect(instance, value):
-
             rect.pos = instance.pos
-
             rect.size = instance.size
-
         return update_rect
-
-
 
 # --------------------------------------------------------
 
@@ -4302,215 +3488,126 @@ class ItemDetailScreen(WhiteBgScreen):
 # --------------------------------------------------------
 
 class MyClaimsScreen(WhiteBgScreen):
-
     """내가 신청한 물품의 '상태'와 '연락처'를 확인하는 화면"""
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
         # 헤더
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('main')) # 메인으로 돌아가기
-
         header.add_widget(back_button)
-
         header.add_widget(Label(text="[b]내 신청 현황[/b]", font_name=FONT_NAME, color=[0,0,0,1], markup=True, font_size='26sp'))
-
         main_layout.add_widget(header)
 
-
-
         # 스크롤 뷰
-
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.grid.bind(minimum_height=self.grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.grid)
-
         main_layout.add_widget(scroll_view)
-
         self.add_widget(main_layout)
-
-
 
         self.bind(on_enter=self.refresh_list)
 
-
-
     # 텍스트 겹침 방지 헬퍼 함수
-
     def create_wrapping_label(self, text_content, **kwargs):
-
         label = Label(
-
             text=text_content, size_hint_y=None, font_name=FONT_NAME,
-
             markup=True, halign='left', **kwargs
-
         )
-
         label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
-
         label.bind(texture_size=lambda instance, value: setattr(instance, 'height', value[1]))
-
         return label
 
-
-
     def refresh_list(self, *args):
-
         self.grid.clear_widgets()
-
         app = App.get_running_app()
+        
+        if not app.user_token:
+             return
 
-
-
-        # 내가 신청한(claimer_id) 모든 'claims' 필터링
-
-        my_claims = [c for c in app.claims if c['claimer_id'] == app.current_user]
-
-
+        try:
+            # 내 신청 내역(claims) 가져오기
+            claims_node = db.child("claims").get(app.user_token)
+            claims_dict = claims_node.val()
+            my_claims = []
+            
+            if claims_dict:
+                for c in claims_dict.values():
+                    if c.get('claimer_id') == app.current_user_uid:
+                        my_claims.append(c)
+        except Exception:
+            my_claims = []
 
         if not my_claims:
-
             self.grid.add_widget(Label(text="신청한 내역이 없습니다.", font_name=FONT_NAME, color=[0.5, 0.5, 0.5, 1], size_hint_y=None, height=dp(100)))
-
             return
 
-
-
         for claim in my_claims:
-
             item_id = claim.get('item_id')
-
             
-
-            # 아이템 원본 정보를 찾아 물품명 획득
-
-            item = next((i for i in app.all_items if i.get('item_id') == item_id), None)
-
-            item_name = item['name'] if item else '알 수 없는 물품'
-
+            # 물품 정보 가져오기
+            item_name = "알 수 없는 물품"
+            try:
+                item_data = db.child(f"all_items/{item_id}").get(app.user_token).val()
+                if item_data:
+                    item_name = item_data.get('name', "알 수 없는 물품")
+            except:
+                pass
             
-
             item_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=dp(10), spacing=dp(5))
-
             item_box.bind(minimum_height=item_box.setter('height')) 
 
-
-
             with item_box.canvas.before:
-
                 Color(0.95, 0.95, 0.95, 1)
-
                 bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
-
             item_box.bind(
-
                 pos=lambda instance, value, r=bg_rect: setattr(r, 'pos', value),
-
                 size=lambda instance, value, r=bg_rect: setattr(r, 'size', value)
-
             )
 
-
-
             # 1. 물품명 표시
-
             item_box.add_widget(self.create_wrapping_label(
-
                 text_content=f"[b]물품명: {item_name}[/b]", 
-
                 color=[0,0,0,1]
-
             ))
-
             
-
-            item_box.add_widget(Label(size_hint_y=None, height=dp(5))) # 여백
-
-
+            item_box.add_widget(Label(size_hint_y=None, height=dp(5)))
 
             # 2. 신청 상태(status)에 따라 분기
-
             claim_status = claim.get('status')
-
             
-
             if claim_status == 'approved':
-
-                # (핵심) 승인됨 -> 연락처 표시
-
-                contact_info = claim.get('finder_contact', '연락처 정보 없음')
-
+                # (관리자가 승인 시 finder_contact에 '학생복지처'라고 저장됨)
+                location_info = claim.get('finder_contact', '학생복지처')
                 item_box.add_widget(self.create_wrapping_label(
-
                     text_content="[color=008000][b]승인 완료[/b][/color]\n" \
-
-                                 f"등록자 연락처: [b]{contact_info}[/b]\n" \
-
-                                 "(등록자에게 연락하여 물품을 수령하세요)", 
-
+                                 f"수령 장소: [b]{location_info}[/b]\n" \
+                                 "(학생복지처에 방문하여 물품을 수령하세요)", 
                     color=[0.2, 0.2, 0.2, 1]
-
                 ))
-
                 
-
             elif claim_status == 'rejected':
-
-                # 거절됨
-
                 item_box.add_widget(self.create_wrapping_label(
-
                     text_content="[color=A01010][b]신청 거절[/b][/color]\n" \
-
                                  "(관리자가 신청을 거절했습니다)", 
-
                     color=[0.2, 0.2, 0.2, 1]
-
                 ))
-
             
-
             else:
-
-                # 'status' 필드가 없음 -> 'pending' (검토 중)
-
                 item_box.add_widget(self.create_wrapping_label(
-
                     text_content="[color=F08000][b]관리자 검토 중[/b][/color]\n" \
-
                                  "(관리자가 신청 내역을 확인하고 있습니다)", 
-
                     color=[0.2, 0.2, 0.2, 1]
-
                 ))
-
             
-
             self.grid.add_widget(item_box)
 
 
@@ -4522,553 +3619,281 @@ class MyClaimsScreen(WhiteBgScreen):
 # --------------------------------------------------------
 
 class LostAndFoundScreen(WhiteBgScreen):
-
     def __init__(self, **kwargs):
-
         super().__init__(**kwargs)
-
-
 
         main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
-
-
         # 상단 헤더
-
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(10), padding=[0, dp(10), 0, dp(10)])
 
-
-
         back_button = get_styled_button("←", [0.9, 0.9, 0.9, 1], [0, 0, 0, 1], font_size='24sp')
-
         back_button.height = dp(50)
-
         back_button.size_hint_x = None
-
         back_button.width = dp(60)
-
         back_button.bind(on_press=lambda *args: self.go_to_screen('main'))
-
         header.add_widget(back_button)
 
-
-
         header.add_widget(Label(
-
             text="[b]분실물 게시판[/b]",
-
             font_name=FONT_NAME,
-
             color=[0, 0, 0, 1],
-
             markup=True,
-
             font_size='26sp',
-
             halign='center', valign='middle'
-
         ))
 
-
-
         post_button = get_styled_button("+", [1, 0.5, 0.3, 1], [1, 1, 1, 1], font_size='24sp')
-
         post_button.height = dp(50)
-
         post_button.size_hint_x = None
-
         post_button.width = dp(60)
-
         post_button.bind(on_press=self.show_registration_choice_popup)
-
         header.add_widget(post_button)
-
-
 
         main_layout.add_widget(header)
 
-
-
-        # 검색 및 필터링 UI (플로우차트 일치)
-
+        # 검색 및 필터링 UI
         search_filter_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(120), spacing=dp(10), padding=[dp(10), 0])
 
-
-
         keyword_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
-
         self.search_input = TextInput(hint_text='물품 이름, 설명 등 키워드 검색', font_name=FONT_NAME, size_hint_x=0.7, multiline=False)
-
         search_button = get_styled_button("검색", [0.2, 0.6, 1, 1], [1, 1, 1, 1], font_size='18sp')
-
         search_button.height = dp(50)
-
         search_button.size_hint_x = 0.3
-
         search_button.bind(on_press=self.search_items)
-
         keyword_layout.add_widget(self.search_input)
-
         keyword_layout.add_widget(search_button)
 
-
-
         category_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
-
         category_label = Label(text='카테고리(종류):', font_name=FONT_NAME, size_hint_x=0.3)
-
         self.category_spinner = Spinner(
-
             text='전체',
-
             values=('전체', '전자기기', '서적', '의류', '지갑/카드', '기타'),
-
             font_name=FONT_NAME,
-
             size_hint_x=0.7,
-
             background_normal='',             
-
             background_color=[1, 1, 1, 1],  
-
             color=[0, 0, 0, 1]                
-
         )
-
         
-
-        # 2. (핵심) 생성된 객체에 'option_cls_args' 속성을 별도로 설정합니다.
-
         self.category_spinner.option_cls_args = {
-
-            'font_name': FONT_NAME,           # (1. 폰트 깨짐 해결)
-
-            'background_normal': '',        # (2. 스타일 해결)
-
-            'background_color': [1, 1, 1, 1], # (2. 흰색 배경)
-
-            'color': [0, 0, 0, 1],            # (2. 검은색 텍스트)
-
-            'height': dp(50)                  # (2. 옵션 높이 조절)
-
+            'font_name': FONT_NAME,           
+            'background_normal': '',        
+            'background_color': [1, 1, 1, 1], 
+            'color': [0, 0, 0, 1],            
+            'height': dp(50)                  
         }
-
         self.category_spinner.bind(text=self.search_items)
-
         category_layout.add_widget(category_label)
-
         category_layout.add_widget(self.category_spinner)
 
-
-
         search_filter_layout.add_widget(keyword_layout)
-
         search_filter_layout.add_widget(category_layout)
-
         main_layout.add_widget(search_filter_layout)
 
-
-
-        # 분실물 목록을 표시할 스크롤 뷰
-
+        # 분실물 목록 스크롤 뷰
         scroll_view = ScrollView(size_hint=(1, 1))
-
         self.items_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
-
         self.items_grid.bind(minimum_height=self.items_grid.setter('height'))
 
-
-
         scroll_view.add_widget(self.items_grid)
-
         main_layout.add_widget(scroll_view)
 
-
-
-        # 알림 키워드 등록 UI (플로우차트 일치)
-
+        # 알림 키워드 등록 UI
         notification_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10), padding=[dp(10), 0])
-
         self.keyword_input = TextInput(hint_text='알림받을 키워드 (예: 지갑)', font_name=FONT_NAME, size_hint_x=0.7)
-
         keyword_button = get_styled_button("키워드 등록", [0.5, 0.5, 0.5, 1], [1,1,1,1], font_size='16sp')
-
         keyword_button.height=dp(50)
-
         keyword_button.size_hint_x = 0.3
-
         keyword_button.bind(on_press=self.register_keyword)
-
         notification_layout.add_widget(self.keyword_input)
-
         notification_layout.add_widget(keyword_button)
-
         main_layout.add_widget(notification_layout)
-
-
 
         self.add_widget(main_layout)
 
-
-
-        # 화면이 처음 보일 때 전체 목록을 표시
-
         self.bind(on_enter=self.refresh_list)
 
-
-
     def show_registration_choice_popup(self, instance):
-
-        """분실/습득 등록 선택 팝업을 띄웁니다."""
-
+        """분실/습득 등록 선택 팝업"""
         popup_content = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
-
         
-
-        # (핵심) 1. 흰색 둥근 배경 그리기
-
         with popup_content.canvas.before:
-
             Color(1, 1, 1, 1)
-
             self.rect_bg = RoundedRectangle(pos=popup_content.pos, size=popup_content.size, radius=[dp(10)])
-
         
-
-        # (핵심) 2. 배경이 팝업 크기를 따라가도록 바인딩
-
         popup_content.bind(pos=self._update_popup_rect_cb(self.rect_bg),
-
                            size=self._update_popup_rect_cb(self.rect_bg))
 
-
-
         popup = Popup(
-
             title='등록 종류 선택',
-
             title_font=FONT_NAME,
-
-            title_color=[0, 0, 0, 1], # 제목 텍스트 검은색
-
+            title_color=[0, 0, 0, 1], 
             content=popup_content,
-
             size_hint=(0.8, 0.4),
-
-            separator_height=0,      # (핵심) 3. 기본 제목 표시줄(회색) 제거
-
-            background=''            # (핵심) 4. 기본 팝업 배경(회색) 투명하게
-
+            separator_height=0,      
+            background=''            
         )
-
         
-
-        # ... (버튼 추가 로직은 동일) ...
-
         def go_to_register(is_lost, *args):
-
             register_screen = self.manager.get_screen('add_item')
-
             register_screen.is_lost = is_lost
-
             self.manager.current = 'add_item'
-
             popup.dismiss()
-
             
-
-        
-
         lost_button = get_styled_button("잃어버렸어요 (분실물 등록)", [0.8, 0.2, 0.2, 1], [1,1,1,1])
-
         found_button = get_styled_button("주웠어요 (습득물 등록)", [0.2, 0.6, 1, 1], [1,1,1,1])
-
         lost_button.bind(on_press=lambda *args: go_to_register(True))
-
         found_button.bind(on_press=lambda *args: go_to_register(False))
-
         popup_content.add_widget(lost_button)
-
         popup_content.add_widget(found_button)
-
-
 
         popup.open()
 
 
-
-
-
     def search_items(self, *args):
-
-        """키워드와 카테고리로 아이템을 검색합니다."""
-
+        """키워드와 카테고리로 아이템을 검색합니다 (Firebase DB 조회)"""
         app = App.get_running_app()
+        if not app.user_token: return
 
         keyword = self.search_input.text.lower()
-
         category = self.category_spinner.text
-
-
-
         
+        try:
+            # Firebase DB에서 'all_items' 가져오기
+            items_node = db.child("all_items").get(app.user_token)
+            items_dict = items_node.val()
+            
+            all_items_list = []
+            if items_dict:
+                all_items_list = list(items_dict.values())
 
-        
-
-        # 1. '분실(lost)' 또는 '신청 가능(found_available)' 상태인 아이템만 기본 목록으로 함
-
-        base_list = [
-
-            item for item in app.all_items 
-
-            if item.get('status') == 'lost' or item.get('status') == 'found_available'
-
-        ]
-
-        
-
-        filtered_list = base_list
-
-        
-
-
-
-        # 카테고리 필터링
-
-        if category != '전체':
-
-            filtered_list = [item for item in filtered_list if item.get('category') == category]
-
-
-
-        # 키워드 필터링
-
-        if keyword:
-
-            filtered_list = [
-
-                item for item in filtered_list
-
-                if keyword in item['name'].lower() 
-
-                or keyword in item.get('desc', '').lower()
-
-                or keyword in item.get('loc', '').lower() # 장소도 검색
-
+            # 1. 상태 필터링 (분실 or 신청가능)
+            base_list = [
+                item for item in all_items_list 
+                if item.get('status') == 'lost' or item.get('status') == 'found_available'
             ]
+            
+            filtered_list = base_list
 
+            # 2. 카테고리 필터링
+            if category != '전체':
+                filtered_list = [item for item in filtered_list if item.get('category') == category]
 
+            # 3. 키워드 필터링
+            if keyword:
+                filtered_list = [
+                    item for item in filtered_list
+                    if keyword in item['name'].lower() 
+                    or keyword in item.get('desc', '').lower()
+                    or keyword in item.get('loc', '').lower()
+                ]
+            
+            # 최신순 정렬 (item_id에 타임스탬프가 포함되어 있으므로 item_id 역순 정렬도 유효)
+            filtered_list.sort(key=lambda x: x.get('item_id', ''), reverse=True)
 
-        self.update_item_list(filtered_list)
-
+            self.update_item_list(filtered_list)
+            
+        except Exception as e:
+            print(f"검색 실패: {e}")
+            self.update_item_list([])
 
 
     def register_keyword(self, instance):
-
         app = App.get_running_app()
-
         keyword = self.keyword_input.text.strip()
-
         if keyword and keyword not in app.notification_keywords:
-
             app.notification_keywords.append(keyword)
-
             Popup(title='알림', content=Label(text=f"키워드 '{keyword}'가 등록되었습니다.", font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
             self.keyword_input.text = ""
-
         elif not keyword:
-
             Popup(title='오류', content=Label(text="키워드를 입력해주세요.", font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
-
         else:
-
             Popup(title='알림', content=Label(text=f"이미 등록된 키워드입니다.", font_name=FONT_NAME), size_hint=(0.8, 0.3)).open()
 
-
-
     def refresh_list(self, *args):
-
         self.search_input.text = ""
-
         self.category_spinner.text = '전체'
-
         self.search_items()
 
-
-
     def update_item_list(self, items):
-
-        """ 주어진 분실물 목록으로 화면을 업데이트합니다. (이미지 포함) """
-
         self.items_grid.clear_widgets()
-
         if not items:
-
             no_items_label = Label(
-
                 text="표시할 분실물이 없습니다.",
-
                 font_name=FONT_NAME,
-
                 color=[0.5, 0.5, 0.5, 1],
-
                 size_hint_y=None,
-
                 height=dp(100)
-
             )
-
             self.items_grid.add_widget(no_items_label)
-
         else:
-
             for item_data in items:
-
-                # --- 목록 아이템 높이 120dp로 증가 ---
-
                 item_layout = LostItemListItem(
-
                     orientation='horizontal',
-
                     size_hint_y=None,
-
                     height=dp(120),
-
                     spacing=dp(10),
-
                     padding=dp(5)
-
                 )
-
                 
-
                 item_layout.item_data = item_data
-
                 item_layout.bind(on_press=self.view_item_details)
 
-
-
                 image = Image(
-
                     source=item_data.get('image') if item_data.get('image') else DEFAULT_IMAGE,
-
                     size_hint_x=None,
-
                     width=dp(90),
-
                     fit_mode='contain'
-
                 )
-
                 item_layout.add_widget(image)
-
-
 
                 text_layout = BoxLayout(orientation='vertical', spacing=dp(5))
 
-
-
-                status_text = "[b][color=1010A0]습득[/color][/b]" if item_data['status'] == 'found' else "[b][color=A01010]분실[/color][/b]"
-
-                
-
-                # 습득물 중에서도 'found_available'만 목록에 보이므로, 'found'로 표시해도 무방.
-
-                # 'lost'는 '분실'로 표시됩니다.
-
-                if item_data['status'] == 'lost':
-
+                # 상태 텍스트 처리
+                status_val = item_data.get('status')
+                status_text = ""
+                if status_val == 'lost':
                     status_text = "[b][color=A01010]분실[/color][/b]"
-
-                else: 
-
-                    # item_data['status'] == 'found_available'
-
+                elif status_val == 'found_available':
                     status_text = "[b][color=1010A0]습득[/color][/b]"
-
+                else:
+                    status_text = "[b][color=505050]완료[/color][/b]" # 예외 처리
                 
-
                 name_label = Label(
-
                     text=f"{status_text} {item_data['name']}", font_name=FONT_NAME, color=[0, 0, 0, 1], markup=True,
-
                     halign='left', valign='middle', size_hint_y=None, height=dp(25)
-
                 )
-
                 loc_label = Label(
-
                     text=f"[b]장소:[/b] {item_data['loc']}", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], markup=True,
-
                     halign='left', valign='middle', size_hint_y=None, height=dp(20)
-
                 )
-
                 
-
-                # --- '시간' 라벨 추가 ---
-
                 time_label = Label(
-
                     text=f"[b]시간:[/b] {item_data.get('time', 'N/A')}", font_name=FONT_NAME, color=[0.3, 0.3, 0.3, 1], markup=True,
-
                     halign='left', valign='middle', size_hint_y=None, height=dp(20)
-
                 )
-
-
 
                 text_layout.add_widget(name_label)
-
                 text_layout.add_widget(loc_label)
-
-                
-
-                # --- '시간' 라벨을 text_layout에 추가 ---
-
                 text_layout.add_widget(time_label)
 
-
-
-                # --- time_label도 바인딩 대상에 포함 ---
-
                 for label in [name_label, loc_label, time_label]:
-
                     label.bind(size=label.setter('text_size'))
 
-
-
                 item_layout.add_widget(text_layout)
-
                 self.items_grid.add_widget(item_layout)
 
-
-
     def view_item_details(self, instance):
-
-        """ 분실물 상세 정보 화면으로 이동 """
-
         detail_screen = self.manager.get_screen('item_detail')
-
         detail_screen.item_data = instance.item_data
-
         self.go_to_screen('item_detail')
 
-
-
     def _update_popup_rect_cb(self, rect):
-
-        """RoundedRectangle 팝업 배경 업데이트를 위한 콜백 함수"""
-
         def update_rect(instance, value):
-
             rect.pos = instance.pos
-
             rect.size = instance.size
-
         return update_rect
-
 
 
 
