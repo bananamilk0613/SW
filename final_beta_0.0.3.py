@@ -28,6 +28,11 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.resources import resource_find
 from kivy.utils import platform
 from jnius import autoclass
+from plyer import notification
+from kivy.clock import Clock
+import threading
+from kivy.clock import mainthread
+
 if platform == 'android':
     try:
         import android
@@ -168,7 +173,55 @@ class ClubListItem(ButtonBehavior, BoxLayout):
     def _update_bg(self, instance, value):
         self.bg_rect.pos = instance.pos
         self.bg_rect.size = instance.size
+
+
+# [교체할 코드] main.py의 send_local_notification 함수
+def send_local_notification(title, message):
+    """안드로이드 상단 배너(Heads-up) 알림 전송 함수 (Java 직접 호출)"""
+    
+    # 1. PC 환경이면 콘솔 출력만 하고 종료
+    if platform != 'android':
+        print(f"==============================")
+        print(f"[PC 알림 시뮬레이션]")
+        print(f"제목: {title}")
+        print(f"내용: {message}")
+        print(f"==============================")
+        return
+
+    try:
+        from jnius import autoclass, cast
+        from android.os import Build
         
+        Context = autoclass('android.content.Context')
+        NotificationManager = autoclass('android.app.NotificationManager')
+        NotificationChannel = autoclass('android.app.NotificationChannel')
+        NotificationCompat = autoclass('androidx.core.app.NotificationCompat$Builder')
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        
+
+        context = cast('android.content.Context', PythonActivity.mActivity)
+        notification_service = context.getSystemService(Context.NOTIFICATION_SERVICE)
+        manager = cast('android.app.NotificationManager', notification_service)
+        
+        channel_id = "campus_link_high_channel"
+        
+        if Build.VERSION.SDK_INT >= 26:
+            importance = NotificationManager.IMPORTANCE_HIGH
+            channel = NotificationChannel(channel_id, "중요 알림", importance)
+            channel.setDescription("상단 팝업 알림을 위한 채널입니다.")
+            channel.enableVibration(True)
+            manager.createNotificationChannel(channel)
+        builder = NotificationCompat(context, channel_id)
+        builder.setContentTitle(title)
+        builder.setContentText(message)
+        builder.setSmallIcon(context.getApplicationInfo().icon)
+        builder.setAutoCancel(True)
+        builder.setPriority(1)
+        builder.setDefaults(1 | 2) 
+        manager.notify(1, builder.build())
+        
+    except Exception as e:
+        print(f"헤드업 알림 전송 실패: {e}")    
 
 class FirebaseREST:
     @staticmethod
@@ -639,17 +692,24 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
                 self.bg_rect = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(5)])
             item_box.bind(pos=lambda i, v: setattr(self.bg_rect, 'pos', v), size=lambda i, v: setattr(self.bg_rect, 'size', v))
 
-            item_box.add_widget(WrappedLabel(text=f"[b]물품명:[/b] {item['name']}", color=[0,0,0,1], markup=True))
-            item_box.add_widget(WrappedLabel(text=f"[b]신청자:[/b] {claim.get('claimer_nickname', '알 수 없음')} ({claim.get('claimer_id')})", color=[0,0,0,1], markup=True))
+            item_box.add_widget(WrappedLabel(text=f"[b]물품명:[/b] {item['name']}", font_name=FONT_NAME, color=[0,0,0,1], markup=True))
+            item_box.add_widget(WrappedLabel(text=f"[b]신청자:[/b] {claim.get('claimer_nickname', '알 수 없음')} ({claim.get('claimer_id')})", font_name=FONT_NAME, color=[0,0,0,1], markup=True))
+            item_box.add_widget(Label(size_hint_y=None, height=dp(10)))
+            item_box.add_widget(WrappedLabel(text=f"[b]등록자(Finder) 정보:[/b]", font_name=FONT_NAME, color=[0.1, 0.4, 0.7, 1], markup=True))
+            item_box.add_widget(WrappedLabel(text=f"  - 장소: {item['loc']}", font_name=FONT_NAME, color=[0.1, 0.4, 0.7, 1]))
+            item_box.add_widget(WrappedLabel(text=f"  - 공개 설명: {item.get('desc', '없음')}", font_name=FONT_NAME, color=[0.1, 0.4, 0.7, 1]))
+            finder_secret = item.get('verification_desc', '없음 (등록자가 입력 안 함)')
+            if not finder_secret: finder_secret = '없음'
+            
+            item_box.add_widget(WrappedLabel(
+                text=f"  - [b][color=FF0000]비공개 검증 정보:[/color][/b] {finder_secret}", 
+                font_name=FONT_NAME, color=[0.2, 0.2, 0.2, 1], markup=True
+            ))
+            
             item_box.add_widget(Label(size_hint_y=None, height=dp(10)))
             
-            item_box.add_widget(WrappedLabel(text=f"[b]등록자(Finder)가 올린 정보:[/b]", color=[0.1, 0.4, 0.7, 1], markup=True))
-            item_box.add_widget(WrappedLabel(text=f"  - (장소): {item['loc']}", color=[0.1, 0.4, 0.7, 1]))
-            item_box.add_widget(WrappedLabel(text=f"  - (상세): {item.get('desc', '없음')}", color=[0.1, 0.4, 0.7, 1]))
-            item_box.add_widget(Label(size_hint_y=None, height=dp(10)))
-            
-            item_box.add_widget(WrappedLabel(text=f"[b]신청자(Claimer)가 입력한 [상세 특징]:[/b]", color=[0.8, 0.2, 0.2, 1], markup=True))
-            item_box.add_widget(WrappedLabel(text=f"{claim.get('verification_details', 'N/A')}", color=[0.8, 0.2, 0.2, 1]))
+            item_box.add_widget(WrappedLabel(text=f"[b]신청자(Claimer)가 주장하는 [상세 특징]:[/b]", font_name=FONT_NAME, color=[0.8, 0.2, 0.2, 1], markup=True))
+            item_box.add_widget(WrappedLabel(text=f"{claim.get('verification_details', 'N/A')}", font_name=FONT_NAME, color=[0.8, 0.2, 0.2, 1]))
             item_box.add_widget(Label(size_hint_y=None, height=dp(15)))
 
             button_layout = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
@@ -657,10 +717,12 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
             approve_btn.claim = claim
             approve_btn.item = item
             approve_btn.bind(on_press=self.approve_claim)
+            
             reject_btn = Button(text="신청 거절", font_name=FONT_NAME, background_color=[0.8, 0.2, 0.2, 1])
             reject_btn.claim = claim
             reject_btn.item = item
             reject_btn.bind(on_press=self.reject_claim)
+            
             button_layout.add_widget(approve_btn)
             button_layout.add_widget(reject_btn)
             item_box.add_widget(button_layout)
@@ -677,6 +739,7 @@ class AdminClaimApprovalScreen(WhiteBgScreen):
         try:
             FirebaseREST.db_put(f"all_items/{item['item_id']}", item, app.user_token)
             FirebaseREST.db_put(f"claims/{claim['claim_id']}", claim, app.user_token)
+            
             popup_message = f"승인이 완료되었습니다.\n\n신청자('{claim.get('claimer_nickname')}')에게\n'{pickup_location}' 수령이 안내됩니다."
             popup = Popup(title='[b]승인 완료[/b]', title_font=FONT_NAME, content=Label(text=popup_message, font_name=FONT_NAME, markup=True, padding=dp(10)), size_hint=(0.9, 0.4))
             popup.bind(on_dismiss=self.refresh_list)
@@ -964,8 +1027,10 @@ class ClaimManagementScreen(WhiteBgScreen):
                 size=lambda instance, value, r=bg_rect: setattr(r, 'size', value)
             )
 
+            # [수정] font_name=FONT_NAME 추가
             item_box.add_widget(WrappedLabel(
                 text=f"[b]{item.get('name', '이름 없음')}[/b]", 
+                font_name=FONT_NAME,
                 color=[0,0,0,1], markup=True, font_size='16sp'
             ))
             
@@ -984,35 +1049,37 @@ class ClaimManagementScreen(WhiteBgScreen):
                     
                     if claim:
                         status_text = f"[color=A01010]관리자 검토 중[/color]\n신청자: {claim.get('claimer_nickname', '알 수 없음')}"
-                        item_box.add_widget(WrappedLabel(text=status_text, color=[0,0,0,1], markup=True))
+                        item_box.add_widget(WrappedLabel(text=status_text, font_name=FONT_NAME, color=[0,0,0,1], markup=True))
                     else:
                         status_text = "[color=1010A0]신청 가능[/color]"
-                        item_box.add_widget(WrappedLabel(text=status_text, color=[0,0,0,1], markup=True))
+                        item_box.add_widget(WrappedLabel(text=status_text, font_name=FONT_NAME, color=[0,0,0,1], markup=True))
                 except:
                     pass
 
             elif item_status == 'found_available':
                 status_text = "[color=1010A0]신청 가능[/color] (대기중인 신청 없음)"
-                item_box.add_widget(WrappedLabel(text=status_text, color=[0.3,0.3,0.3,1], markup=True))
+                item_box.add_widget(WrappedLabel(text=status_text, font_name=FONT_NAME, color=[0.3,0.3,0.3,1], markup=True))
             
             elif item_status == 'found_returned':
                 item_box.add_widget(WrappedLabel(
                     text="[color=008000][b]교차 검증 승인됨[/b][/color]", 
+                    font_name=FONT_NAME,
                     color=[1, 1, 1, 1], markup=True
                 ))
                 item_box.add_widget(WrappedLabel(
                     text="(학생복지처에 물품을 인계해주세요)", 
+                    font_name=FONT_NAME,
                     color=[0.4, 0.4, 0.4, 1],
                     font_size='14sp'
                 ))
 
             elif item_status == 'lost':
                 status_text = "내가 등록한 분실물"
-                item_box.add_widget(WrappedLabel(text=status_text, color=[0.5,0.5,0.5,1]))
+                item_box.add_widget(WrappedLabel(text=status_text, font_name=FONT_NAME, color=[0.5,0.5,0.5,1]))
             
             else:
                 status_text = f"상태: {item_status}"
-                item_box.add_widget(WrappedLabel(text=status_text, color=[0.5,0.5,0.5,1]))
+                item_box.add_widget(WrappedLabel(text=status_text, font_name=FONT_NAME, color=[0.5,0.5,0.5,1]))
 
             self.grid.add_widget(item_box)
 
@@ -1538,6 +1605,7 @@ class ClubDetailScreen(WhiteBgScreen):
                 section_data = self.club_data.get(data_key)
                 if section_data:
                     items_list = []
+                    # [주의] 데이터가 리스트([])로 들어오면 여기서 튕길 수 있음 (원본 코드 로직 유지)
                     for item in section_data.values():
                         if isinstance(item, dict) and 'content' in item:
                             items_list.append(item)
@@ -1567,7 +1635,6 @@ class ClubDetailScreen(WhiteBgScreen):
             self.main_layout.add_widget(scroll_view)
             self.main_layout.add_widget(bottom_bar)
 
-    # 인기도 알고리즘 (REST 방식 적용)
     def update_popularity_score(self, club_id):
         app = App.get_running_app()
         if not app.user_token: return
@@ -2834,15 +2901,14 @@ class MyApp(App):
         self.claims = []
         self.all_clubs = []
         self.notification_keywords = ['지갑']
+        self.notified_claims = set()
 
     def build(self):
         self.title = "Campus Link"
         sm = ScreenManager()
-        
         sm.add_widget(LoginScreen(name='login'))
         sm.add_widget(SignupScreen(name='signup'))
         sm.add_widget(MainScreen(name='main'))
-        
         sm.add_widget(ClubScreen(name='club'))
         sm.add_widget(ClubDetailScreen(name='club_detail'))
         sm.add_widget(ClubCreateScreen(name='club_create'))
@@ -2866,6 +2932,66 @@ class MyApp(App):
         sm.add_widget(MyClaimsScreen(name='my_claims'))
         
         return sm
+
+    def on_start(self):
+        """앱이 시작될 때 실행되는 함수"""
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                from android.os import Build
+                
+                if Build.VERSION.SDK_INT >= 33:
+                    request_permissions([Permission.POST_NOTIFICATIONS])
+            except Exception as e:
+                print(f"권한 요청 오류: {e}")
+
+        Clock.schedule_interval(self.check_my_claim_status, 10)
+
+    def check_my_claim_status(self, dt):
+        """[스케줄러] 10초마다 호출되어 백그라운드 스레드를 생성"""
+
+        t = threading.Thread(target=self._check_background)
+        t.start()
+
+    def _check_background(self):
+        """[백그라운드 스레드] 실제 서버 통신 수행 (UI 건드리면 안 됨)"""
+
+        if not self.user_token or not self.current_user:
+            return
+
+        try:
+
+            claims_dict = FirebaseREST.db_get("claims", self.user_token)
+            
+            if not claims_dict: return
+
+            for claim_id, claim_data in claims_dict.items():
+ 
+                if claim_data.get('claimer_id') == self.current_user:
+                    
+                    if claim_data.get('status') == 'approved':
+                        
+
+                        if claim_id not in self.notified_claims:
+                            
+                            self.trigger_notification_on_main_thread(claim_id)
+                            
+        except Exception as e:
+            print(f"백그라운드 체크 오류: {e}")
+
+    @mainthread
+    def trigger_notification_on_main_thread(self, claim_id):
+        """[메인 스레드] 실제로 알림을 띄우는 함수"""
+ 
+        if claim_id in self.notified_claims: return
+        
+
+        send_local_notification(
+            title="🎉 매칭 성공!",
+            message="신청하신 분실물의 소유권이 승인되었습니다.\n앱에서 수령 장소를 확인하세요."
+        )
+
+        self.notified_claims.add(claim_id)
 
 if __name__ == '__main__':
     MyApp().run()
